@@ -1,0 +1,219 @@
+# CI for the Go services.
+#
+# Two things make this different from a single `go test ./...`:
+#
+#  1. Path filtering. Only services whose code changed are built, but a change
+#     under internal/platform/ or to go.mod rebuilds everything, because they
+#     are compiled into all three binaries. Getting that dependency wrong is
+#     how you ship a stale image that passed a green build.
+#
+#  2. The job writes the new image tag back into the Helm values and pushes
+#     that commit. That commit is the deploy — Argo CD notices it and syncs.
+#     Nothing in this pipeline has, or needs, cluster credentials.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first. Without this, two pushes
+# a minute apart race to write the image tag and the loser's commit wins.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.26'
+  REGISTRY: ghcr.io
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.filter.outputs.changes }}
+      charts: ${{ steps.filter.outputs.charts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - 'go.mod'
+              - 'go.sum'
+              - 'internal/platform/**'
+              - 'build/Dockerfile'
+              - '.github/workflows/ci.yaml'
+            gateway:
+              - *shared
+              - 'cmd/gateway/**'
+              - 'internal/gateway/**'
+            kyc:
+              - *shared
+              - 'cmd/kyc/**'
+              - 'internal/kyc/**'
+            scoring:
+              - *shared
+              - 'cmd/scoring/**'
+              - 'internal/scoring/**'
+            charts:
+              - 'deploy/**'
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        # gofmt exits 0 whether or not it found anything, so the check is on
+        # whether it printed a filename.
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "::error::not gofmt'd: $unformatted"
+            exit 1
+          fi
+
+      - name: Tests with race detector
+        # -race is the point of this step. The HTTP server, the Kafka consumer
+        # and the JWKS cache all share state across goroutines; a data race
+        # there shows up in production as corruption, not as a failed test.
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: govulncheck
+        # Scans the modules actually reachable from the code, not the whole
+        # dependency tree — far fewer false positives than a manifest scanner.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  build:
+    needs: [changes, test]
+    if: needs.changes.outputs.services != '[]' && needs.changes.outputs.services != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    outputs:
+      tag: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        run: echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./build/Dockerfile
+          # Only push from main. A PR build still compiles and is scanned, so
+          # a broken Dockerfile fails review rather than main.
+          push: ${{ github.event_name == 'push' }}
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            VERSION=${{ steps.meta.outputs.short_sha }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/kalapa-${{ matrix.service }}:${{ steps.meta.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/kalapa-${{ matrix.service }}:latest
+          # GitHub Actions cache; mode=max caches intermediate stages too, so
+          # an unchanged dependency layer is never rebuilt.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          provenance: false
+
+      - name: Scan the image
+        if: github.event_name == 'push'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/kalapa-${{ matrix.service }}:${{ steps.meta.outputs.short_sha }}
+          format: table
+          # A distroless static image has essentially no OS packages, so a
+          # finding here is a real Go dependency CVE rather than noise.
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+
+  # ---------------------------------------------------------------------------
+  # The GitOps handoff.
+  #
+  # CI does not deploy. It writes the new immutable tag into the chart values
+  # and pushes; Argo CD sees the commit and reconciles. The benefits are not
+  # abstract:
+  #   - the deployed version is visible in `git log`, with an author and a diff
+  #   - rollback is `git revert`, not a remembered kubectl incantation
+  #   - CI holds no kubeconfig, so a compromised workflow cannot touch the
+  #     cluster directly
+  # ---------------------------------------------------------------------------
+  promote:
+    needs: [changes, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pin the new image tags
+        run: |
+          set -euo pipefail
+          tag="${{ needs.build.outputs.tag }}"
+          changed=0
+          for svc in $(echo '${{ needs.changes.outputs.services }}' | jq -r '.[]'); do
+            f="deploy/charts/${svc}/values.yaml"
+            [ -f "$f" ] || continue
+            # Rewrite only the `tag:` line nested under `image:`.
+            yq -i ".\"go-service\".image.tag = \"${tag}\"" "$f"
+            git add "$f"
+            changed=1
+            echo "  ${svc} -> ${tag}"
+          done
+          echo "changed=${changed}" >> "$GITHUB_ENV"
+
+      - name: Commit and push
+        if: env.changed == '1'
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # [skip ci] stops this commit from re-triggering the whole pipeline,
+          # which would otherwise loop forever.
+          git commit -m "deploy: pin images to ${{ needs.build.outputs.tag }} [skip ci]"
+          # Rebase in case a human pushed while the build was running.
+          git pull --rebase origin main
+          git push origin main

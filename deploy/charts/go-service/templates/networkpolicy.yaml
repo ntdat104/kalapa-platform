@@ -1,0 +1,85 @@
+{{- if .Values.networkPolicy.enabled }}
+{{/*
+NetworkPolicy is default-allow until the first policy selects a pod; after
+that, the selected pod is default-deny for the selected directions. So the
+first policy you write locks everything down, and you must then re-permit DNS
+and every legitimate flow. That is the single most common way a NetworkPolicy
+rollout breaks a cluster.
+
+NOTE: minikube's default CNI does NOT enforce NetworkPolicy. These objects will
+be created and will do nothing until you start the cluster with a CNI that
+does (`minikube start --cni=calico`). docs/02-kubernetes-deep-dive.md walks
+through proving enforcement either way — a policy you have not tested is a
+policy you do not have.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "go-service.fullname" . }}
+  labels:
+    {{- include "go-service.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "go-service.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Prometheus must reach the admin port or every target goes down at once.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: admin
+          protocol: TCP
+    {{- with .Values.networkPolicy.allowFromNamespaces }}
+    - from:
+        {{- range . }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+      ports:
+        - port: http
+          protocol: TCP
+    {{- end }}
+    {{- with .Values.networkPolicy.allowFromPods }}
+    - from:
+        {{- range . }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ . }}
+        {{- end }}
+      ports:
+        - port: http
+          protocol: TCP
+    {{- end }}
+  egress:
+    # DNS first. Forgetting this is the classic failure: every outbound call
+    # fails at name resolution and the logs blame the destination service.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- with .Values.networkPolicy.allowToNamespaces }}
+    - to:
+        {{- range . }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

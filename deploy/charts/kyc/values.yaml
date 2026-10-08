@@ -1,0 +1,47 @@
+# KYC owns the write path: Postgres plus a Kafka producer.
+go-service:
+  nameOverride: kyc
+  fullnameOverride: kyc
+
+  image:
+    repository: ghcr.io/kalapa-lab/kalapa-kyc
+    tag: latest
+
+  extraConfigMap: kalapa-kyc-config
+  extraConfigKey: kyc.yaml
+
+  envFromSecrets:
+    - kalapa-postgres-credentials
+
+  ingress:
+    # Reachable only through the gateway. Giving every service its own Ingress
+    # is how an internal API ends up on the public internet.
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 48Mi
+    limits:
+      cpu: 300m
+      memory: 96Mi
+  goMemLimit: "72MiB"
+
+  probes:
+    startup:
+      periodSeconds: 2
+      # 45 x 2s = 90s. Longer than the others because this pod runs the schema
+      # migration and waits for Kafka metadata on first start.
+      failureThreshold: 45
+
+  networkPolicy:
+    enabled: false
+    allowFromPods:
+      - gateway
+    allowToNamespaces:
+      - data
+      - kafka
+      - observability
+
+  config:
+    marker: kyc-v1

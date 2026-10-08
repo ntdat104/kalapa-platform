@@ -1,0 +1,9 @@
+apiVersion: v2
+name: postgres
+description: |
+  A CloudNativePG Cluster for the Kalapa services. The operator itself is
+  installed separately (see deploy/argocd/platform/01-cnpg-operator.yaml);
+  this chart only declares the Cluster custom resource.
+type: application
+version: 0.1.0
+appVersion: "17"

@@ -1,0 +1,76 @@
+# Tempo stores traces. Unlike Loki or Prometheus it indexes almost nothing —
+# traces are written to object storage keyed by trace ID, which is why it is
+# cheap to run and why "find all slow traces" needs the metrics-generator
+# rather than a query over the traces themselves.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo
+    targetRevision: 1.24.4
+    helm:
+      values: |
+        tempo:
+          retention: 48h
+          # The collector forwards over OTLP; Jaeger and Zipkin receivers would
+          # just be open ports nothing writes to.
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+          storage:
+            trace:
+              backend: local
+              local:
+                path: /var/tempo/traces
+              wal:
+                path: /var/tempo/wal
+
+          metricsGenerator:
+            # Derives RED metrics (rate, errors, duration) and the
+            # service-graph edges from spans, then remote-writes them to
+            # Prometheus. This is what populates Grafana's service map; without
+            # it the map is empty no matter how many traces arrive.
+            enabled: true
+            remoteWriteUrl: http://prometheus-kube-prometheus-prometheus.observability:9090/api/v1/write
+
+          # The generator only runs for tenants that have these processors
+          # enabled. With auth disabled the tenant is literally "single-tenant",
+          # and this override is what switches it on for it.
+          overrides:
+            defaults:
+              metrics_generator:
+                processors:
+                  - service-graphs
+                  - span-metrics
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 384Mi
+
+        persistence:
+          enabled: true
+          size: 3Gi
+
+        serviceMonitor:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true

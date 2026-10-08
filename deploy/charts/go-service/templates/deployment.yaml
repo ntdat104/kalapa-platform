@@ -1,0 +1,223 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "go-service.fullname" . }}
+  labels:
+    {{- include "go-service.labels" . | nindent 4 }}
+  annotations:
+    # Reloader watches the ConfigMaps/Secrets this pod mounts and restarts the
+    # Deployment when their content changes. Without it, a ConfigMap edit
+    # updates the mounted file but the process never re-reads it.
+    reloader.stakater.com/search: "true"
+    {{- with .Values.deployment.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  # Omitted entirely when the HPA owns this field. Setting both makes Helm and
+  # the HPA fight: every sync resets the replica count the HPA just chose.
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # maxUnavailable: 0 means the new pod must pass its readiness probe
+      # before an old one is removed — zero-downtime at the cost of needing
+      # headroom for one extra pod.
+      maxUnavailable: {{ .Values.strategy.maxUnavailable }}
+      maxSurge: {{ .Values.strategy.maxSurge }}
+  selector:
+    matchLabels:
+      {{- include "go-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include "go-service.configChecksum" . }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "go-service.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "go-service.serviceAccountName" . }}
+      # The pod does not talk to the API server, so it has no use for a
+      # mounted token. Turning it off removes a credential an attacker could
+      # otherwise pick up from the filesystem.
+      automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      volumes:
+        - name: platform-config
+          configMap:
+            name: {{ .Values.configMapName }}
+        {{- if .Values.extraConfigMap }}
+        - name: service-config
+          configMap:
+            name: {{ .Values.extraConfigMap }}
+        {{- end }}
+        {{- if .Values.securityContext.readOnlyRootFilesystem }}
+        # A read-only root filesystem still needs somewhere writable for
+        # temp files; an emptyDir gives that without making / writable.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      containers:
+        - name: {{ include "go-service.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+              protocol: TCP
+            - name: admin
+              containerPort: {{ .Values.ports.admin }}
+              protocol: TCP
+          envFrom:
+            # Credentials arrive as env vars from a Secret, never through the
+            # mounted ConfigMap: ConfigMap content shows up in `helm get
+            # values`, `kubectl describe` and the Argo CD UI.
+            {{- range .Values.envFromSecrets }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: SERVICE_NAME
+              value: {{ include "go-service.name" . }}
+            - name: SERVICE_VERSION
+              value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+            - name: CONFIG_FILE
+              value: /etc/kalapa/config.yaml
+            {{- if .Values.extraConfigMap }}
+            - name: CONFIG_EXTRA_FILES
+              value: /etc/kalapa/service/{{ .Values.extraConfigKey }}
+            {{- end }}
+            # GOMAXPROCS must track the CPU *limit*, not the node's core count.
+            # Left alone, the Go runtime sees all 10 host cores, starts 10 Ps,
+            # and the scheduler thrashes against a 200m quota.
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.cpu
+                  divisor: "1"
+            # GOMEMLIMIT is the soft limit that makes the GC work harder as the
+            # heap approaches the cgroup limit, instead of the kernel OOM-
+            # killing the pod. Set below limits.memory to leave room for
+            # stacks and the runtime itself.
+            - name: GOMEMLIMIT
+              value: {{ .Values.goMemLimit | quote }}
+            # Downward API: these become resource attributes on every span and
+            # every log line, which is what lets you filter a trace down to one
+            # pod during a bad rollout.
+            - name: K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: platform-config
+              mountPath: /etc/kalapa
+              readOnly: true
+            {{- if .Values.extraConfigMap }}
+            - name: service-config
+              mountPath: /etc/kalapa/service
+              readOnly: true
+            {{- end }}
+            {{- if .Values.securityContext.readOnlyRootFilesystem }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          # startupProbe gates the other two. It allows a slow first start
+          # (schema migration, Kafka metadata fetch) without having to loosen
+          # the liveness probe, which would then be slow to catch a real hang
+          # for the rest of the pod's life.
+          startupProbe:
+            httpGet:
+              path: /healthz/live
+              port: admin
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: admin
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: admin
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            successThreshold: 1
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Endpoint removal is asynchronous: kube-proxy and the Ingress
+              # controller learn about the terminating pod at the same time the
+              # kubelet sends SIGTERM. This pause keeps the container serving
+              # while that propagates, which is what removes the handful of
+              # 502s you otherwise see on every rolling update.
+              #
+              # The native `sleep` action (GA since v1.33) is used instead of
+              # `exec: ["sh","-c","sleep 5"]` on purpose — the distroless image
+              # has no shell, so the exec form would fail silently and you
+              # would be left debugging phantom 502s.
+              sleep:
+                seconds: {{ .Values.preStopSleepSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      # Must exceed preStop sleep + the app's own shutdown timeout, or the
+      # kubelet SIGKILLs mid-drain and in-flight requests are cut.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

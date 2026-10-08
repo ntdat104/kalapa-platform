@@ -1,0 +1,60 @@
+# An ApplicationSet generates Applications from a template. Three near-identical
+# Application manifests would work just as well today; the reason to use a
+# generator is that adding a fourth service becomes "create a chart directory"
+# instead of "create a chart directory and remember to also write an
+# Application and get its project, sync policy and wave right".
+#
+# The git directory generator scans the repo at sync time, so the set of
+# Applications is derived from the repo's actual contents rather than from a
+# list someone has to keep in step with it.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kalapa-services
+  namespace: argocd
+spec:
+  # Without this, deleting the ApplicationSet leaves its Applications behind
+  # as orphans.
+  syncPolicy:
+    preserveResourcesOnDeletion: false
+  generators:
+    - git:
+        repoURL: __GIT_REPO_URL__
+        revision: __GIT_BRANCH__
+        directories:
+          - path: deploy/charts/*
+          # The base chart is a dependency, not a deployable unit; the config
+          # and infra charts have their own Applications with different
+          # projects and waves.
+          - path: deploy/charts/go-service
+            exclude: true
+          - path: deploy/charts/kalapa-config
+            exclude: true
+          - path: deploy/charts/postgres
+            exclude: true
+          - path: deploy/charts/kafka
+            exclude: true
+          - path: deploy/charts/keycloak
+            exclude: true
+  template:
+    metadata:
+      # path.basename is the directory name: gateway, kyc, scoring.
+      name: '{{path.basename}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "30"
+    spec:
+      project: kalapa
+      source:
+        repoURL: __GIT_REPO_URL__
+        targetRevision: __GIT_BRANCH__
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: kalapa
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 5
+          backoff: { duration: 15s, factor: 2, maxDuration: 3m }

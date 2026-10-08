@@ -1,0 +1,64 @@
+{{/*
+The realm is imported from a ConfigMap at startup, which keeps the identity
+configuration in Git like everything else. Clicking it together in the admin
+console would work until the first pod restart wipes it — dev mode's H2-like
+ephemerality does not apply here (we use Postgres), but a hand-made realm is
+still undocumented state nobody can reproduce.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+data:
+  kalapa-realm.json: |
+    {
+      "realm": "{{ .Values.realm.name }}",
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "accessTokenLifespan": 1800,
+      "roles": {
+        "realm": [
+          { "name": "kyc-officer", "description": "Can submit and read KYC applications" },
+          { "name": "risk-analyst", "description": "Can read credit scores" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "{{ .Values.realm.apiClientId }}",
+          "name": "Kalapa API",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["*"],
+          "webOrigins": ["*"],
+          "defaultClientScopes": ["profile", "email", "roles"],
+          "protocolMappers": [
+            {
+              "name": "audience-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {
+                "included.client.audience": "{{ .Values.realm.apiClientId }}",
+                "access.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "{{ .Values.realm.demoUser.username }}",
+          "enabled": true,
+          "emailVerified": true,
+          "email": "{{ .Values.realm.demoUser.username }}@kalapa.local",
+          "firstName": "Demo",
+          "lastName": "Officer",
+          "credentials": [
+            { "type": "password", "value": "{{ .Values.realm.demoUser.password }}", "temporary": false }
+          ],
+          "realmRoles": ["kyc-officer", "risk-analyst"]
+        }
+      ]
+    }

@@ -1,0 +1,46 @@
+cluster:
+  name: kalapa
+  # Must be one of the versions THIS operator build supports. Strimzi 1.2.0
+  # supports 4.2.0, 4.2.1, 4.3.0 and 4.3.1 — nothing older. Pick a wrong one
+  # and the Kafka resource simply never becomes ready; the reason is only in
+  # the CR's status, not in any event:
+  #
+  #   kubectl -n kafka get kafka kalapa -o jsonpath='{.status.conditions}' | jq
+  #
+  # To list what the installed operator accepts:
+  #   kubectl -n kafka get deploy strimzi-cluster-operator -o yaml \
+  #     | grep -A3 STRIMZI_KAFKA_IMAGES
+  version: "4.3.1"
+
+nodePool:
+  name: combined
+  replicas: 1
+  storage:
+    size: 5Gi
+    deleteClaim: false
+  resources:
+    requests:
+      cpu: 200m
+      memory: 768Mi
+    limits:
+      memory: 1Gi
+  # Heap stays at ~50% of the limit; the rest is page cache and JVM overhead.
+  jvm:
+    heap: 512m
+
+topic:
+  name: kyc.application.submitted
+  partitions: 1
+  replicas: 1
+  # Quoted deliberately. Helm parses a bare large integer as a float64, and
+  # `| quote` then renders it in scientific notation — 10485760 becomes
+  # "1.048576e+07", which Kafka rejects with:
+  #
+  #   Invalid value 1.048576e+07 for configuration segment.bytes:
+  #   Not a number of type INT
+  #
+  # The KafkaTopic is created, stays Ready=False, and the only clue is in its
+  # status. Quoting in values.yaml keeps the value a string end to end.
+  # Same trap applies to any value above ~2^24 passed through `| quote`.
+  retentionMs: "604800000"   # 7 days
+  segmentBytes: "10485760"   # 10Mi — small segments so retention is observable

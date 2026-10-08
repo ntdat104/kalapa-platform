@@ -1,0 +1,25 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "go-service.fullname" . }}
+  labels:
+    {{- include "go-service.labels" . | nindent 4 }}
+spec:
+  # A PDB constrains *voluntary* disruption only: node drains, cluster
+  # autoscaler scale-in, `kubectl drain`. It does nothing about a kernel panic
+  # or an OOM kill, and it is not a replacement for having more than one replica.
+  #
+  # The classic foot-gun: minAvailable: 1 on a single-replica Deployment makes
+  # `kubectl drain` block forever, because evicting the only pod would violate
+  # the budget. On a one-node lab cluster that is a guaranteed hang, so this is
+  # off by default and should be switched on together with replicaCount >= 2.
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "go-service.selectorLabels" . | nindent 6 }}
+{{- end }}

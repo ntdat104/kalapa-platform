@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# Shared config, mounted at /etc/kalapa/config.yaml in every service pod.
+# Must match the struct in internal/platform/config/config.go.
+# ---------------------------------------------------------------------------
+config:
+  service:
+    environment: local
+    logLevel: info
+
+  server:
+    httpPort: 8080
+    adminPort: 9090
+    readTimeout: 10s
+    writeTimeout: 30s
+    # Must be smaller than the chart's terminationGracePeriodSeconds minus the
+    # preStop pause, or the kubelet SIGKILLs the process mid-drain.
+    shutdownTimeout: 20s
+
+  database:
+    # <service>.<namespace> — the short form only resolves from inside the same
+    # namespace, and these pods live in `kalapa` while Postgres lives in `data`.
+    # `-rw` is CloudNativePG's read-write Service: it always points at the
+    # current primary, so a failover needs no application change.
+    url: postgres://kalapa-db-rw.data:5432/kalapa?sslmode=disable
+    maxConns: 4
+    minConns: 0
+
+  kafka:
+    # Strimzi creates <cluster>-kafka-bootstrap. Addressing the bootstrap
+    # Service rather than individual brokers is what lets the client discover
+    # the real broker set, including after a scale-up.
+    brokers:
+      - kalapa-kafka-bootstrap.kafka:9092
+    topic: kyc.application.submitted
+    consumerGroup: scoring
+
+  tracing:
+    enabled: true
+    # OTLP/gRPC. Port 4317 is gRPC, 4318 is HTTP — mixing them up produces a
+    # connection that establishes and then silently drops every span.
+    otlpEndpoint: opentelemetry-collector.observability:4317
+    # 1.0 = sample everything. Correct for a lab, ruinous in production:
+    # at real traffic this is the setting that fills Tempo's disk.
+    sampleRatio: 1.0
+
+  auth:
+    # Flipped on in lab 5, once Keycloak has a realm and a client.
+    enabled: false
+    issuerUrl: http://identity.kalapa.local/realms/kalapa
+    audience: kalapa-api
+
+  services:
+    kyc: http://kyc.kalapa
+    scoring: http://scoring.kalapa
+
+# Per-service overlays, rendered as kalapa-<name>-config and mounted at
+# /etc/kalapa/service/<name>.yaml. Later layers win — see config.Load.
+serviceConfig:
+  kyc:
+    kafka:
+      topic: kyc.application.submitted
+  scoring:
+    kafka:
+      topic: kyc.application.submitted
+      consumerGroup: scoring
+  gateway:
+    service:
+      logLevel: info
+
+credentials:
+  postgres:
+    username: kalapa
+    password: kalapa-dev-password
+  keycloak:
+    gatewayClientSecret: gateway-dev-secret

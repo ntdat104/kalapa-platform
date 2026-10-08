@@ -1,0 +1,26 @@
+# gitleaks configuration.
+#
+# Every credential in this repo is a throwaway lab value. They are committed on
+# purpose: a GitOps lab where the secrets are hidden teaches you nothing about
+# how secrets flow. This file tells the scanner which ones are deliberate, so a
+# genuinely leaked credential still fails the build.
+title = "kalapa-platform"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-fake development credentials"
+paths = [
+  '''deploy/charts/kalapa-config/values\.yaml''',
+  '''deploy/charts/postgres/values\.yaml''',
+  '''deploy/charts/keycloak/values\.yaml''',
+  '''deploy/argocd/bootstrap/argocd-values\.yaml''',
+  '''docs/.*\.md''',
+]
+regexes = [
+  '''kalapa-dev-password''',
+  '''keycloak-dev-password''',
+  '''gateway-dev-secret''',
+  '''adminPassword: admin''',
+]

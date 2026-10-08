@@ -1,0 +1,77 @@
+{{/*
+CloudNativePG replaces the StatefulSet-plus-scripts pattern with an operator
+that owns failover, backup and the connection endpoints.
+
+What the operator creates for a Cluster named `kalapa-db`:
+  kalapa-db-rw   -> always the current primary (reads and writes)
+  kalapa-db-ro   -> replicas only; empty with instances: 1
+  kalapa-db-r    -> any instance
+Applications address -rw. On failover the operator repoints that Service, so
+no application config changes and no restart is needed.
+*/}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    app.kubernetes.io/part-of: kalapa
+spec:
+  # One instance on a single-node lab. Three is the production answer, and
+  # the only change needed is this number — the operator handles the rest.
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.image }}
+
+  postgresql:
+    parameters:
+      # Sized for a 256Mi container, not a server. shared_buffers at 25% of
+      # the memory limit is the usual starting point.
+      shared_buffers: {{ .Values.parameters.sharedBuffers | quote }}
+      max_connections: {{ .Values.parameters.maxConnections | quote }}
+      # Logical replication is enabled so the CDC lab (Debezium) can be added
+      # later without a restart — changing wal_level requires one.
+      wal_level: logical
+      max_wal_senders: "10"
+      max_replication_slots: "10"
+      # Log any statement slower than a second; this is what populates the
+      # "slow query" panel without needing pg_stat_statements.
+      log_min_duration_statement: "1000"
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.database }}
+      owner: {{ .Values.owner }}
+      # The operator generates a password unless pointed at a Secret. We point
+      # it at the same Secret the application pods read, so the two cannot
+      # disagree — a mismatch here produces an authentication failure that
+      # looks exactly like a networking problem.
+      secret:
+        name: {{ .Values.credentialsSecret }}
+      postInitApplicationSQL:
+        # Both services share one database and are separated by table, not by
+        # schema. A real system would give each service its own database; the
+        # single-database shortcut here saves ~120Mi and one more Cluster.
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+
+  storage:
+    size: {{ .Values.storage.size }}
+    {{- with .Values.storage.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+
+  resources:
+    requests:
+      cpu: {{ .Values.resources.requests.cpu }}
+      memory: {{ .Values.resources.requests.memory }}
+    limits:
+      memory: {{ .Values.resources.limits.memory }}
+
+  # Exports pg_stat_* as Prometheus metrics on port 9187. The operator also
+  # ships a PodMonitor when enabled below.
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enabled }}
+
+  affinity:
+    # Irrelevant on one node, correct everywhere else: never schedule two
+    # instances of the same cluster onto the same node.
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname

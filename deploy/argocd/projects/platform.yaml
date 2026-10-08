@@ -1,0 +1,33 @@
+# An AppProject is Argo CD's tenancy boundary. Without one, every Application
+# runs under `default`, which permits any source repo, any destination cluster
+# and any resource kind — i.e. a compromised Git repo becomes cluster-admin.
+#
+# Two projects here draw the line that matters in practice: platform
+# components may create cluster-scoped objects (CRDs, ClusterRoles); the
+# application project may not.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  description: Operators, data stores and the observability stack
+  sourceRepos:
+    - __GIT_REPO_URL__
+    # Platform Applications render upstream charts, so their repos must be
+    # allow-listed too.
+    - https://cloudnative-pg.github.io/charts
+    - https://strimzi.io/charts/
+    - https://prometheus-community.github.io/helm-charts
+    - https://grafana.github.io/helm-charts
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
+    - https://stakater.github.io/stakater-charts
+  destinations:
+    - namespace: '*'
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

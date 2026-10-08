@@ -1,0 +1,16 @@
+{{/*
+Escape hatch for one-off objects a service needs but the base chart should not
+know about — a Job, a ConfigMap, an ExternalSecret. `tpl` is applied so the
+value can itself contain template expressions.
+
+This exists so that "my service needs one extra object" never becomes a reason
+to fork the base chart.
+*/}}
+{{- range .Values.extraObjects }}
+---
+{{- if typeIs "string" . }}
+{{- tpl . $ }}
+{{- else }}
+{{- tpl (toYaml .) $ }}
+{{- end }}
+{{- end }}

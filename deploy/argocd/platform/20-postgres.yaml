@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres
+  namespace: argocd
+  annotations:
+    # Wave 10: after the CNPG operator (-10) has installed the Cluster CRD.
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: platform
+  source:
+    repoURL: __GIT_REPO_URL__
+    targetRevision: __GIT_BRANCH__
+    path: deploy/charts/postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: data
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      # The operator takes a while to create the Cluster's pods; without a
+      # retry the first sync is marked Degraded and stays that way.
+      limit: 5
+      backoff: { duration: 15s, factor: 2, maxDuration: 3m }
+  ignoreDifferences:
+    # The operator writes status and a handful of defaulted spec fields back
+    # onto the Cluster. Argo would read those as drift and fight the operator
+    # on every reconcile.
+    - group: postgresql.cnpg.io
+      kind: Cluster
+      jsonPointers:
+        - /spec/bootstrap/initdb/postInitApplicationSQL

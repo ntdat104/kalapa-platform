@@ -1,0 +1,37 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "go-service.fullname" . }}
+  labels:
+    {{- include "go-service.labels" . | nindent 4 }}
+    # The Prometheus CR created by kube-prometheus-stack only adopts
+    # ServiceMonitors matching its serviceMonitorSelector. The chart sets that
+    # selector to `release: <helm release name>`, so this label is what makes
+    # the difference between "metrics scraped" and "silently ignored".
+    #
+    # To debug a missing target:
+    #   kubectl -n observability get prometheus -o yaml | grep -A5 serviceMonitorSelector
+    release: {{ .Values.serviceMonitor.prometheusRelease }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "go-service.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    # Scrapes the admin port, which is not routed by the Ingress.
+    - port: admin
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+      relabelings:
+        # Without this, every series is labelled `pod=kyc-7d9f...-x2k4` and
+        # nothing else. Promoting the pod and node names makes it possible to
+        # correlate a metric spike with the node it happened on.
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+{{- end }}

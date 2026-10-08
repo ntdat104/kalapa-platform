@@ -1,0 +1,45 @@
+{{/*
+KafkaNodePool is how Strimzi models a set of nodes since ZooKeeper was removed.
+Strimzi 1.x is KRaft-only: there is no `spec.zookeeper` any more, and a Kafka
+resource without at least one node pool will never become ready.
+
+Roles:
+  controller -> runs the Raft quorum that holds cluster metadata
+  broker     -> stores partitions and serves clients
+
+Production splits these into two pools so a controller restart cannot disturb
+data serving. One combined node is used here because two pools mean two JVMs,
+and a second JVM costs ~700Mi this cluster does not have.
+*/}}
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: {{ .Values.nodePool.name }}
+  labels:
+    # Without this label the pool is orphaned: the operator uses it to decide
+    # which Kafka cluster the pool belongs to.
+    strimzi.io/cluster: {{ .Values.cluster.name }}
+spec:
+  replicas: {{ .Values.nodePool.replicas }}
+  roles:
+    - controller
+    - broker
+  storage:
+    type: persistent-claim
+    size: {{ .Values.nodePool.storage.size }}
+    # false -> the PVC survives `helm uninstall`. Set true in a lab you expect
+    # to tear down often, or you will leak volumes.
+    deleteClaim: {{ .Values.nodePool.storage.deleteClaim }}
+  resources:
+    requests:
+      cpu: {{ .Values.nodePool.resources.requests.cpu }}
+      memory: {{ .Values.nodePool.resources.requests.memory }}
+    limits:
+      memory: {{ .Values.nodePool.resources.limits.memory }}
+  jvmOptions:
+    # -Xms == -Xmx avoids heap resizing pauses. Both are set well below the
+    # container limit because Kafka's real memory consumer is the OS page
+    # cache, not the heap — leaving ~40% of the limit unheaped is what keeps
+    # the broker off the OOM killer.
+    -Xms: {{ .Values.nodePool.jvm.heap }}
+    -Xmx: {{ .Values.nodePool.jvm.heap }}

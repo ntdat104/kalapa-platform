@@ -1,0 +1,21 @@
+{{ include "go-service.fullname" . }} deployed to namespace {{ .Release.Namespace }}.
+
+  Rollout status
+    kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "go-service.fullname" . }}
+
+  Health (admin port, never exposed through the Ingress)
+    kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "go-service.fullname" . }} {{ .Values.ports.admin }}:{{ .Values.ports.admin }}
+    curl -s localhost:{{ .Values.ports.admin }}/healthz/ready | jq
+    curl -s localhost:{{ .Values.ports.admin }}/metrics | head
+
+{{- if .Values.ingress.enabled }}
+
+  Public URL
+    http://{{ .Values.ingress.host }}
+  Add to /etc/hosts:
+    $(minikube ip)  {{ .Values.ingress.host }}
+{{- end }}
+
+  Is Prometheus actually scraping it?
+    kubectl -n observability get servicemonitor {{ include "go-service.fullname" . }}
+    # then check Status > Targets in the Prometheus UI

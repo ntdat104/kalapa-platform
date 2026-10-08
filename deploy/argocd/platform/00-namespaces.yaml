@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: namespaces
+  namespace: argocd
+  annotations:
+    # Sync waves order the resources Argo applies. The root app creates all
+    # these Application objects at once; the wave annotation on each decides
+    # the order in which Argo starts syncing them. Lower runs first, and Argo
+    # waits for a wave to be Healthy before starting the next.
+    argocd.argoproj.io/sync-wave: "-20"
+spec:
+  project: platform
+  source:
+    repoURL: __GIT_REPO_URL__
+    targetRevision: __GIT_BRANCH__
+    path: deploy/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }

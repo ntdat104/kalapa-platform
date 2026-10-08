@@ -1,0 +1,15 @@
+apiVersion: v2
+name: kalapa-config
+description: |
+  Shared configuration and credentials for the Kalapa services.
+  Mirrors YAS's `yas-configuration` chart.
+
+  Note: YAS bundles the Reloader controller here as a chart dependency. This
+  repo installs Reloader as its own Argo CD Application instead
+  (deploy/argocd/platform/03-reloader.yaml). Under GitOps a controller is a
+  platform component with its own lifecycle, not a subchart of the config it
+  happens to watch — bundling it means every config change re-renders the
+  controller's manifests too.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

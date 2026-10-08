@@ -1,0 +1,40 @@
+{{/*
+Keycloak gets its own Cluster rather than a second database inside the
+application cluster. The reason is blast radius: a schema migration during a
+Keycloak upgrade must not be able to lock up the tables the KYC service is
+writing to.
+*/}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-db-credentials
+type: kubernetes.io/basic-auth
+stringData:
+  username: {{ .Values.database.username | quote }}
+  password: {{ .Values.database.password | quote }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.database.clusterName }}
+spec:
+  instances: 1
+  imageName: {{ .Values.database.image }}
+  bootstrap:
+    initdb:
+      database: keycloak
+      owner: {{ .Values.database.username }}
+      secret:
+        name: keycloak-db-credentials
+  storage:
+    size: {{ .Values.database.storageSize }}
+  postgresql:
+    parameters:
+      shared_buffers: 32MB
+      max_connections: "30"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 256Mi

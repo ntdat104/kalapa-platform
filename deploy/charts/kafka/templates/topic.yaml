@@ -1,0 +1,19 @@
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: {{ .Values.topic.name }}
+  labels:
+    strimzi.io/cluster: {{ .Values.cluster.name }}
+spec:
+  # Partition count is the hard ceiling on consumer parallelism: a group can
+  # never have more useful consumers than partitions. It can be raised later,
+  # but never lowered, and raising it redistributes keys across partitions —
+  # which breaks per-key ordering for keys that move.
+  partitions: {{ .Values.topic.partitions }}
+  replicas: {{ .Values.topic.replicas }}
+  config:
+    retention.ms: {{ .Values.topic.retentionMs | quote }}
+    segment.bytes: {{ .Values.topic.segmentBytes | quote }}
+    # compact would keep only the latest record per key — right for a state
+    # topic, wrong for an event log where every submission matters.
+    cleanup.policy: delete

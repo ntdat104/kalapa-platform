@@ -1,0 +1,84 @@
+# Grafana datasources, provisioned through the sidecar that watches for
+# ConfigMaps labelled grafana_datasource: "1".
+#
+# The interesting content is the cross-links. Three signals are only useful as
+# a system when you can get from one to the next:
+#
+#   metric spike  --(exemplar)-->  trace
+#   trace span    --(tracesToLogs)-->  that pod's logs at that moment
+#   log line      --(derivedField)-->  the trace it belongs to
+#
+# Each of those is one block below. Leave them out and you have three separate
+# tools that happen to be installed in the same cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kalapa-datasources
+  namespace: observability
+  labels:
+    grafana_datasource: "1"
+data:
+  kalapa-datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki-gateway.observability
+        jsonData:
+          maxLines: 1000
+          derivedFields:
+            # Scans each log line for a trace_id field and renders it as a
+            # clickable link into Tempo. Our logs are JSON, so the regex
+            # targets the quoted JSON value.
+            - name: TraceID
+              datasourceUid: tempo
+              matcherRegex: '"trace_id":"(\w+)"'
+              url: '$${__value.raw}'
+              urlDisplayLabel: 'View trace'
+
+      - name: Tempo
+        type: tempo
+        uid: tempo
+        access: proxy
+        # 3200, not 3100. Tempo's HTTP query API and 3100 (which is
+        # Loki's port) are easy to transpose; the symptom is a Tempo
+        # datasource that saves fine and returns "no data" for every
+        # search. Confirm with:
+        #   kubectl -n observability get svc tempo -o json | jq '.spec.ports'
+        url: http://tempo.observability:3200
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki
+            # Narrow the log query to the same pod and a window around the
+            # span, otherwise the link lands you in the whole cluster's logs.
+            spanStartTimeShift: '-5m'
+            spanEndTimeShift: '5m'
+            filterByTraceID: true
+            filterBySpanID: false
+            tags:
+              - key: 'k8s.namespace.name'
+                value: 'namespace'
+              - key: 'k8s.pod.name'
+                value: 'pod'
+          tracesToMetrics:
+            datasourceUid: prometheus
+            spanStartTimeShift: '-5m'
+            spanEndTimeShift: '5m'
+            queries:
+              - name: 'Request rate'
+                query: 'sum(rate(http_server_requests_total{$$__tags}[5m]))'
+          serviceMap:
+            # Reads the span-derived metrics Tempo's generator remote-writes
+            # into Prometheus. Point this at the wrong datasource and the
+            # service map renders empty with no error.
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          search:
+            hide: false
+          lokiSearch:
+            datasourceUid: loki
+          traceQuery:
+            timeShiftEnabled: true

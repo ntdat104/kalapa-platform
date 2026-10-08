@@ -1,0 +1,34 @@
+# One ConfigMap shared by every service, plus one small overlay per service.
+#
+# Why a shared base rather than per-service config: the endpoints that must
+# agree across services (the OTLP collector address, the Kafka bootstrap
+# servers, the issuer URL) are exactly the ones that break subtly when they
+# drift. Defining them once makes drift impossible.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kalapa-config
+  labels:
+    app.kubernetes.io/part-of: kalapa
+  annotations:
+    # Reloader only considers objects carrying this annotation, so an
+    # unrelated ConfigMap edit cannot trigger a cluster-wide restart.
+    reloader.stakater.com/match: "true"
+data:
+  config.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}
+---
+{{- range $name, $overlay := .Values.serviceConfig }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kalapa-{{ $name }}-config
+  labels:
+    app.kubernetes.io/part-of: kalapa
+  annotations:
+    reloader.stakater.com/match: "true"
+data:
+  {{ $name }}.yaml: |
+    {{- toYaml $overlay | nindent 4 }}
+---
+{{- end }}

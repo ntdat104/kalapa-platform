@@ -1,0 +1,54 @@
+# The gateway is the only service with an Ingress and the only one that talks
+# to Keycloak. It has no database, so it declares no Postgres credentials.
+go-service:
+  nameOverride: gateway
+  fullnameOverride: gateway
+
+  image:
+    repository: ghcr.io/kalapa-lab/kalapa-gateway
+    tag: latest
+
+  extraConfigMap: kalapa-gateway-config
+  extraConfigKey: gateway.yaml
+
+  # No DB, so no Postgres Secret. Each service mounting only the credentials it
+  # actually needs is the whole point of splitting them per Secret.
+  envFromSecrets: []
+
+  ingress:
+    enabled: true
+    className: nginx
+    host: api.kalapa.local
+    annotations:
+      # The upstream Go service has its own 10s client timeout; letting NGINX
+      # wait longer only produces connections that outlive the request.
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+      # Bound the request body at the edge so an oversized upload is rejected
+      # before it ever reaches a 96Mi pod.
+      nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    paths:
+      - path: /api
+        pathType: Prefix
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 300m
+      memory: 64Mi
+  goMemLimit: "48MiB"
+
+  networkPolicy:
+    enabled: false
+    # Only the Ingress controller may reach the gateway's HTTP port.
+    allowFromNamespaces:
+      - ingress-nginx
+    allowToNamespaces:
+      - kalapa
+      - identity
+      - observability
+
+  config:
+    marker: gateway-v1

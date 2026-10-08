@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: platform
+  source:
+    repoURL: __GIT_REPO_URL__
+    targetRevision: __GIT_BRANCH__
+    path: deploy/charts/kafka
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 5m }
+  ignoreDifferences:
+    # Strimzi defaults a long list of fields on the Kafka resource. Without
+    # this, the Application never leaves OutOfSync even when it is correct.
+    - group: kafka.strimzi.io
+      kind: Kafka
+      jqPathExpressions:
+        - '.spec.kafka.config'
+    - group: kafka.strimzi.io
+      kind: KafkaTopic
+      jqPathExpressions:
+        - '.spec.topicName'
+        - '.status'

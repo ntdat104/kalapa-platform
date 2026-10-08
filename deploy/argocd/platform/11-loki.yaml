@@ -1,0 +1,131 @@
+# Loki in SingleBinary mode: all microservices (distributor, ingester, querier,
+# compactor) in one process.
+#
+# The chart's default is `distributed` / SimpleScalable, which is three
+# StatefulSets plus MinIO — around 1.5 GB. SingleBinary with filesystem
+# storage is ~250 MB and behaves identically for a single-tenant lab.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 7.3.0
+    helm:
+      values: |
+        deploymentMode: SingleBinary
+
+        loki:
+          # Multi-tenancy off: with it on, every read and write needs an
+          # X-Scope-OrgID header and a missing header returns a confusing
+          # "no org id" error.
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              # TSDB + v13 is the current schema. The chart refuses to install
+              # without an explicit schemaConfig, because silently picking one
+              # would make a future upgrade unmigratable.
+              - from: "2024-04-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+          limits_config:
+            retention_period: 72h
+            # Logs arriving with a timestamp older than this are dropped. A
+            # pod with a skewed clock is the usual cause of "my logs are not
+            # in Loki" with no error anywhere.
+            reject_old_samples: true
+            reject_old_samples_max_age: 168h
+            # A single busy pod can otherwise exhaust the ingestion budget for
+            # the whole cluster.
+            ingestion_rate_mb: 8
+            ingestion_burst_size_mb: 16
+            # Guards against a high-cardinality label (a trace id promoted to a
+            # label by mistake) exploding the index.
+            max_label_names_per_series: 20
+          compactor:
+            working_directory: /var/loki/compactor
+            retention_enabled: true
+            delete_request_store: filesystem
+
+        singleBinary:
+          replicas: 1
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 384Mi
+          persistence:
+            enabled: true
+            size: 3Gi
+
+        # Every component below belongs to the scalable deployment modes.
+        # Leaving any of them enabled alongside SingleBinary produces a
+        # half-wired cluster that accepts writes and returns no results.
+        backend: { replicas: 0 }
+        read: { replicas: 0 }
+        write: { replicas: 0 }
+        ingester: { replicas: 0 }
+        querier: { replicas: 0 }
+        queryFrontend: { replicas: 0 }
+        queryScheduler: { replicas: 0 }
+        distributor: { replicas: 0 }
+        compactor: { replicas: 0 }
+        indexGateway: { replicas: 0 }
+        bloomCompactor: { replicas: 0 }
+        bloomGateway: { replicas: 0 }
+
+        # MinIO would be the object store for a scalable deployment; the
+        # filesystem store makes it dead weight.
+        minio:
+          enabled: false
+
+        # The gateway is an nginx in front of Loki. Keeping it means one
+        # stable address (`loki-gateway`) whether Loki is single-binary or
+        # scaled out later, which is worth ~30Mi.
+        gateway:
+          enabled: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+        monitoring:
+          selfMonitoring:
+            enabled: false
+            grafanaAgent:
+              installOperator: false
+          lokiCanary:
+            enabled: false
+        test:
+          enabled: false
+        chunksCache:
+          enabled: false
+        resultsCache:
+          enabled: false
+        lokiCanary:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

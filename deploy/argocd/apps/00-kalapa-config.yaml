@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kalapa-config
+  namespace: argocd
+  annotations:
+    # Before the services: a pod whose ConfigMap does not exist stays in
+    # ContainerCreating indefinitely rather than failing with a clear error.
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: kalapa
+  source:
+    repoURL: __GIT_REPO_URL__
+    targetRevision: __GIT_BRANCH__
+    path: deploy/charts/kalapa-config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kalapa
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true

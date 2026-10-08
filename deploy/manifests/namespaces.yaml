@@ -1,0 +1,58 @@
+# Namespaces are created declaratively rather than by `--create-namespace` so
+# their labels are owned by Git. Two label families matter:
+#
+#   pod-security.kubernetes.io/*  -> Pod Security Admission. `restricted` is
+#       the strictest built-in profile: no privilege escalation, no root, all
+#       capabilities dropped, seccomp required. The go-service chart's
+#       securityContext is written to satisfy it, so this label is what proves
+#       those settings are real rather than decorative.
+#   kubernetes.io/metadata.name   -> set automatically by the API server; the
+#       NetworkPolicy namespaceSelectors key off it.
+#
+# `warn` and `audit` without `enforce` would only log violations. `enforce` is
+# used where it can be, and deliberately relaxed where a component genuinely
+# needs more (observability runs a node-level log collector; data operators
+# run privileged init containers).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kalapa
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: data
+  labels:
+    # CloudNativePG's instance pods need a few things `restricted` forbids.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: identity
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    # node-exporter mounts the host filesystem and shares the host network;
+    # neither is permitted under baseline.
+    pod-security.kubernetes.io/enforce: privileged

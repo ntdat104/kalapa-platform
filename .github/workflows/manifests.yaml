@@ -1,0 +1,135 @@
+# Validates the Kubernetes side of the repo.
+#
+# Under GitOps a bad manifest does not fail a deploy script — it fails silently
+# inside Argo CD, where you may not look for an hour. These checks move that
+# failure to the pull request.
+name: manifests
+
+on:
+  pull_request:
+    paths: ['deploy/**', '.github/workflows/manifests.yaml']
+  push:
+    branches: [main]
+    paths: ['deploy/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Lint and render every chart
+        run: |
+          set -euo pipefail
+          helm repo add stakater https://stakater.github.io/stakater-charts
+          helm repo update
+          for chart in deploy/charts/*/; do
+            name=$(basename "$chart")
+            echo "::group::$name"
+            helm dependency build "$chart" 2>/dev/null || true
+            helm lint "$chart"
+            # Rendering catches what lint does not: a template that references
+            # a value nobody defined fails here, not in the cluster.
+            helm template "$name" "$chart" --namespace kalapa > "/tmp/${name}.yaml"
+            echo "::endgroup::"
+          done
+
+      - name: Validate against the Kubernetes API schema
+        run: |
+          set -euo pipefail
+          curl -sSLo /tmp/kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+          # CRDs (Cluster, Kafka, ServiceMonitor) are not in the stock schema
+          # set, so point kubeconform at the community CRD schema mirror and
+          # skip only what is still missing.
+          /tmp/kubeconform \
+            -strict \
+            -summary \
+            -kubernetes-version 1.34.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -ignore-missing-schemas \
+            /tmp/*.yaml
+
+      - name: Check for the unsubstituted repo placeholder
+        run: |
+          # A pushed __GIT_REPO_URL__ makes every Argo CD Application fail to
+          # resolve its source, with an error that does not mention the cause.
+          if grep -rq '__GIT_REPO_URL__' deploy/argocd deploy/manifests; then
+            echo "::error::run scripts/init-repo.sh before committing"
+            grep -rn '__GIT_REPO_URL__' deploy/argocd deploy/manifests
+            exit 1
+          fi
+
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Render the service charts
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rendered
+          for chart in deploy/charts/gateway deploy/charts/kyc deploy/charts/scoring; do
+            helm dependency build "$chart"
+            helm template "$(basename "$chart")" "$chart" -n kalapa \
+              > "/tmp/rendered/$(basename "$chart").yaml"
+          done
+
+      - name: Security posture of the rendered pods
+        # These assertions are what keep the chart's securityContext from
+        # quietly regressing. They are the same rules the `restricted` Pod
+        # Security Standard enforces at admission — checking them here means a
+        # regression fails the PR instead of the deploy.
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in /tmp/rendered/*.yaml; do
+            name=$(basename "$f" .yaml)
+            check() {
+              if ! grep -q "$1" "$f"; then
+                echo "::error file=$f::$name is missing: $2"
+                fail=1
+              fi
+            }
+            check 'runAsNonRoot: true'            'runAsNonRoot'
+            check 'allowPrivilegeEscalation: false' 'allowPrivilegeEscalation: false'
+            check 'readOnlyRootFilesystem: true'  'readOnlyRootFilesystem'
+            check 'drop:'                          'dropped capabilities'
+            check 'automountServiceAccountToken: false' 'automountServiceAccountToken: false'
+
+            # Every container must declare both requests and limits, or the
+            # pod lands in BestEffort QoS and is the first thing evicted.
+            if ! grep -q 'requests:' "$f" || ! grep -q 'limits:' "$f"; then
+              echo "::error file=$f::$name has no resource requests/limits"
+              fail=1
+            fi
+
+            # A mutable tag makes Argo CD report Synced while running old code.
+            if grep -qE 'image: .*:latest"?$' "$f"; then
+              echo "::warning file=$f::$name still uses a :latest tag"
+            fi
+          done
+          exit $fail
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        # The dev passwords in this repo are intentional and allow-listed in
+        # .gitleaks.toml. The scan exists to catch the real one someone pastes
+        # in later.
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/work" -w /work \
+            zricethezav/gitleaks:v8.21.2 detect \
+            --source=. --config=/work/.gitleaks.toml --redact --verbose

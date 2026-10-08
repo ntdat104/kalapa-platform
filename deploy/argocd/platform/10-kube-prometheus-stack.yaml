@@ -1,0 +1,182 @@
+# Prometheus + Alertmanager + Grafana + the Prometheus Operator, in one chart.
+#
+# The operator is the important part: it turns ServiceMonitor and PodMonitor
+# resources into scrape configs. Without it you would be editing
+# prometheus.yml by hand, which is exactly the workflow Kubernetes makes
+# untenable (pods come and go, their IPs change every restart).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.0.0
+    helm:
+      releaseName: prometheus
+      values: |
+        # ---- Prometheus ----
+        prometheus:
+          prometheusSpec:
+            # 24h of 30s samples for ~15 targets is a few hundred MB. Default
+            # is 10d, which fills a laptop disk and then silently stops
+            # ingesting.
+            retention: 24h
+            retentionSize: 2GB
+            scrapeInterval: 30s
+            evaluationInterval: 30s
+
+            # THE setting that trips everyone up.
+            #
+            # By default the chart sets these selectors to `release: <name>`,
+            # so Prometheus only adopts ServiceMonitors carrying that label.
+            # Setting them to false (an empty selector) makes it adopt every
+            # ServiceMonitor in the cluster, which is what you want in a lab.
+            #
+            # The go-service chart still stamps `release: prometheus` on its
+            # ServiceMonitor, so switching this back to the default is a
+            # one-line change when you want to practise the strict behaviour.
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+
+            # Lets the Tempo metrics-generator push span-derived RED metrics
+            # in. Without it Tempo's service graph has no metrics backend and
+            # the Grafana service map stays empty.
+            enableRemoteWriteReceiver: true
+
+            # Exemplars link a histogram bucket to a specific trace ID — the
+            # "click the latency spike, land on the slow trace" workflow.
+            # Requires the exemplar storage feature flag.
+            enableFeatures:
+              - exemplar-storage
+
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                memory: 896Mi
+
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 3Gi
+
+        # ---- Alertmanager ----
+        # Disabled: ~80Mi for a component with nowhere to send alerts in a lab.
+        # Lab 8 turns it back on and routes to a local webhook receiver.
+        alertmanager:
+          enabled: false
+
+        # ---- Grafana ----
+        grafana:
+          adminUser: admin
+          adminPassword: admin
+          defaultDashboardsTimezone: Asia/Ho_Chi_Minh
+          # No PVC: dashboards come from ConfigMaps (see the sidecar below),
+          # so there is no state worth persisting. Anything you create by
+          # clicking is lost on restart — that is the intended lesson.
+          persistence:
+            enabled: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            hosts:
+              - grafana.kalapa.local
+          sidecar:
+            dashboards:
+              enabled: true
+              # Any ConfigMap in any namespace labelled grafana_dashboard: "1"
+              # is picked up and loaded. That is how the Kalapa dashboard gets
+              # in without touching Grafana's API.
+              label: grafana_dashboard
+              searchNamespace: ALL
+            datasources:
+              enabled: true
+              label: grafana_datasource
+              searchNamespace: ALL
+          grafana.ini:
+            # Required for the Loki -> Tempo "trace_id" link to open the trace
+            # in a side panel rather than a new query.
+            feature_toggles:
+              enable: traceToMetrics
+            users:
+              default_theme: dark
+
+        # ---- Exporters ----
+        nodeExporter:
+          enabled: true
+        kubeStateMetrics:
+          enabled: true
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+        prometheus-node-exporter:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        # These scrape control-plane components that minikube either does not
+        # expose or runs inside the single node. Left on, they produce
+        # permanently-down targets that train you to ignore red targets.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 5m }
+  ignoreDifferences:
+    # The admission webhook's CA bundle is injected at runtime by a Job. Argo
+    # would otherwise see it as drift and revert it on every self-heal,
+    # breaking the webhook every few minutes.
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle

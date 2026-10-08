@@ -1,0 +1,188 @@
+# The OpenTelemetry Collector is the single seam between "what the application
+# emits" and "where telemetry is stored".
+#
+# Why not have each service push straight to Tempo? Because then every backend
+# change is a redeploy of every service. The collector means the apps speak one
+# protocol (OTLP) to one address forever, and routing, sampling, filtering and
+# attribute shaping all become a config change here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opentelemetry-collector
+  namespace: argocd
+  annotations:
+    # After Tempo and Prometheus: the collector's exporters fail (and the pod
+    # logs errors) until its destinations exist.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.175.1
+    helm:
+      releaseName: opentelemetry-collector
+      values: |
+        # `deployment` = one shared instance. The alternatives:
+        #   daemonset -> one per node, for node-local telemetry
+        #   statefulset -> when you need sticky routing (tail sampling)
+        # A gateway deployment is the right shape for app-pushed OTLP.
+        mode: deployment
+        replicaCount: 1
+
+        image:
+          # The `-contrib` distribution carries the exporters the core build
+          # omits — including prometheusremotewrite. The chart's default
+          # `otelcol-contrib` repository is correct, but pin it so a chart
+          # default change cannot silently drop an exporter.
+          repository: otel/opentelemetry-collector-contrib
+
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+
+        # The chart's presets write parts of the config for you. Disabled here
+        # so the pipeline below is the whole truth and nothing is appended
+        # invisibly.
+        presets:
+          logsCollection:
+            enabled: false
+          kubernetesAttributes:
+            enabled: false
+
+        # RBAC for the k8sattributes processor, which needs to read pods to
+        # turn a pod IP into k8s.pod.name / k8s.namespace.name.
+        clusterRole:
+          create: true
+          rules:
+            - apiGroups: [""]
+              resources: ["pods", "namespaces", "nodes"]
+              verbs: ["get", "watch", "list"]
+            - apiGroups: ["apps"]
+              resources: ["replicasets"]
+              verbs: ["get", "watch", "list"]
+
+        ports:
+          otlp:
+            enabled: true
+            containerPort: 4317
+            servicePort: 4317
+            protocol: TCP
+          otlp-http:
+            enabled: true
+            containerPort: 4318
+            servicePort: 4318
+            protocol: TCP
+          metrics:
+            enabled: true
+
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+
+          processors:
+            # memory_limiter MUST be first in every pipeline. It sheds load
+            # when the collector approaches its own limit; placed later, the
+            # processors ahead of it have already allocated the memory that
+            # causes the OOM.
+            memory_limiter:
+              check_interval: 1s
+              limit_percentage: 80
+              spike_limit_percentage: 25
+
+            # Enriches spans with pod metadata by matching the source IP.
+            k8sattributes:
+              auth_type: serviceAccount
+              passthrough: false
+              extract:
+                metadata:
+                  - k8s.namespace.name
+                  - k8s.pod.name
+                  - k8s.deployment.name
+                  - k8s.node.name
+              pod_association:
+                - sources:
+                    - from: resource_attribute
+                      name: k8s.pod.name
+                - sources:
+                    - from: connection
+
+            # batch goes last: batching before enrichment would mean
+            # re-walking every batch to enrich it.
+            batch:
+              timeout: 5s
+              send_batch_size: 1024
+              send_batch_max_size: 2048
+
+          exporters:
+            otlp/tempo:
+              endpoint: tempo.observability:4317
+              tls:
+                insecure: true
+              sending_queue:
+                enabled: true
+                # Bounded: an unbounded queue turns a Tempo outage into a
+                # collector OOM.
+                queue_size: 1000
+              retry_on_failure:
+                enabled: true
+                initial_interval: 5s
+                max_interval: 30s
+                max_elapsed_time: 120s
+
+            prometheusremotewrite:
+              endpoint: http://prometheus-kube-prometheus-prometheus.observability:9090/api/v1/write
+              resource_to_telemetry_conversion:
+                # Copies resource attributes (service.name, k8s.pod.name) onto
+                # the metric labels. Without it every metric is unattributable.
+                enabled: true
+
+            debug:
+              # `detailed` dumps every span to stdout. Useful for ten minutes
+              # while you debug the pipeline, ruinous as a standing setting.
+              verbosity: basic
+
+          service:
+            telemetry:
+              metrics:
+                # The collector's own metrics. Scraped by the ServiceMonitor
+                # below — a collector that is silently dropping data looks
+                # identical to one with no traffic unless you watch these.
+                level: normal
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, k8sattributes, batch]
+                exporters: [otlp/tempo]
+              metrics:
+                receivers: [otlp]
+                processors: [memory_limiter, k8sattributes, batch]
+                exporters: [prometheusremotewrite]
+              logs:
+                # Nothing pushes OTLP logs today — the Go services write JSON
+                # to stdout and Alloy ships it. The pipeline exists so that
+                # switching to the OTLP log path later is a config change here
+                # and not a new component.
+                receivers: [otlp]
+                processors: [memory_limiter, batch]
+                exporters: [debug]
+
+        serviceMonitor:
+          enabled: true
+          extraLabels:
+            release: prometheus
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true

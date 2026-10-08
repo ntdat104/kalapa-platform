@@ -1,0 +1,187 @@
+# Grafana Alloy collects container logs and ships them to Loki.
+#
+# YAS uses Promtail for this. Promtail reached end-of-life in early 2025 and
+# Alloy is its replacement; the mental model is identical (tail files under
+# /var/log/pods, attach labels, push to Loki) but the config language is River
+# rather than YAML. The mapping is spelled out in docs/01-yas-mapping.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy-logs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 1.13.0
+    helm:
+      releaseName: alloy-logs
+      values: |
+        controller:
+          # DaemonSet: log files live on the node, so the collector must too.
+          type: daemonset
+
+        alloy:
+          mounts:
+            # /var/log/pods is where the kubelet writes the per-container log
+            # directory tree.
+            varlog: true
+            # ...but under the DOCKER container runtime those files are only
+            # SYMLINKS into /var/lib/docker/containers. Mount /var/log alone and
+            # every tail fails with "no such file or directory" while every
+            # Alloy component still reports healthy — logs simply never arrive,
+            # with nothing in any log to say why.
+            #
+            # Under containerd (the default on most real clusters, and what
+            # `minikube start --container-runtime=containerd` gives you) the
+            # files under /var/log/pods are real and this mount is unnecessary.
+            # It is harmless there, so it stays on to keep both runtimes working.
+            dockercontainers: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 192Mi
+
+          configMap:
+            content: |-
+              // ---------------------------------------------------------------
+              // 1. Discover every pod on THIS node.
+              //    Without the node filter each DaemonSet pod would discover
+              //    every pod in the cluster and then find no local log files
+              //    for most of them.
+              // ---------------------------------------------------------------
+              discovery.kubernetes "pods" {
+                role = "pod"
+                selectors {
+                  role  = "pod"
+                  field = "spec.nodeName=" + coalesce(sys.env("HOSTNAME"), constants.hostname)
+                }
+              }
+
+              // ---------------------------------------------------------------
+              // 2. Turn pod metadata into Loki labels.
+              //
+              //    Label choice is THE cost decision in Loki. Every distinct
+              //    combination of label values is a separate stream with its
+              //    own index entry and chunks. namespace/pod/container is
+              //    bounded by the cluster size. Promoting trace_id or
+              //    request_id here would create a stream per request and
+              //    destroy the index — that is why they stay inside the log
+              //    line and are found with a filter expression instead.
+              // ---------------------------------------------------------------
+              discovery.relabel "pod_logs" {
+                targets = discovery.kubernetes.pods.targets
+
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  target_label  = "container"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+                  target_label  = "app"
+                }
+                // Builds the on-disk path Alloy will tail.
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+                  separator     = "/"
+                  action        = "replace"
+                  replacement   = "/var/log/pods/*$1/*.log"
+                  target_label  = "__path__"
+                }
+              }
+
+              // ---------------------------------------------------------------
+              // 3. Expand the glob into concrete files.
+              //
+              //    This component is easy to leave out and the failure is
+              //    confusing: `loki.source.file` takes CONCRETE paths and does
+              //    not expand globs itself, so pointing it straight at the
+              //    relabel output produces a stat error per container —
+              //
+              //      failed to tail file, stat failed:
+              //      stat /var/log/pods/*<uid>/<container>/*.log
+              //
+              //    — and not a single log line reaches Loki. `local.file_match`
+              //    is the component that resolves the pattern and keeps
+              //    watching for files that appear later, which is what makes a
+              //    newly scheduled pod get picked up without a restart.
+              // ---------------------------------------------------------------
+              local.file_match "pod_logs" {
+                path_targets = discovery.relabel.pod_logs.output
+                sync_period  = "10s"
+              }
+
+              // 4. Tail them.
+              loki.source.file "pod_logs" {
+                targets    = local.file_match.pod_logs.targets
+                forward_to = [loki.process.parse.receiver]
+              }
+
+              // ---------------------------------------------------------------
+              // 5. Parse. The CRI stage strips the runtime's wrapper
+              //    ("<ts> stdout F <line>"); skipping it means every log line
+              //    is prefixed with timestamp noise and the JSON stage fails.
+              // ---------------------------------------------------------------
+              loki.process "parse" {
+                // Two runtimes, two on-disk line formats, and a stage that
+                // cannot parse a line leaves it untouched rather than failing —
+                // so listing both makes the pipeline runtime-agnostic.
+                //
+                //   containerd:  2026-10-07T11:40:50Z stdout F {"level":"info"...}
+                //   docker:      {"log":"{\"level\":\"info\"...}","stream":"stdout",...}
+                //
+                // Get this wrong and logs still arrive, but every line is the
+                // raw runtime wrapper, `stage.json` below finds no `level`
+                // field, and the level/service labels silently never appear.
+                stage.cri {}
+                stage.docker {}
+
+                // Pull `level` out of our JSON logs so it can become a label.
+                stage.json {
+                  expressions = {
+                    level   = "level",
+                    service = "service",
+                  }
+                }
+
+                // Only `level` and `service` are promoted. trace_id stays in
+                // the line body — see the cardinality note above.
+                stage.labels {
+                  values = {
+                    level   = "",
+                    service = "",
+                  }
+                }
+
+                forward_to = [loki.write.default.receiver]
+              }
+
+              // 6. Ship.
+              loki.write "default" {
+                endpoint {
+                  url = "http://loki-gateway.observability/loki/api/v1/push"
+                }
+              }
+
+        serviceMonitor:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true

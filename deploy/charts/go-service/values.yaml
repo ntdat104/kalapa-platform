@@ -1,0 +1,206 @@
+# Base values for every Kalapa Go service.
+# Service charts override only what differs; anything not listed there uses
+# these numbers, which are tuned for a single-node 7 GB minikube.
+
+replicaCount: 1
+
+# How many old ReplicaSets to retain for rollback. The default of 10 keeps ten
+# dead ReplicaSet objects per service cluttering etcd and `kubectl get all`.
+revisionHistoryLimit: 3
+
+image:
+  repository: ghcr.io/kalapa-lab/kalapa-gateway
+  # `latest` is a trap under GitOps: Argo CD cannot tell that the tag now
+  # points at a different digest, so it reports Synced while running stale
+  # code. The CD workflow rewrites this field to an immutable short-SHA tag;
+  # `latest` only ever applies before the first pipeline run.
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+ports:
+  http: 8080   # business traffic, behind the Service and the Ingress
+  admin: 9090  # /healthz/*, /metrics — kubelet and Prometheus only
+
+service:
+  type: ClusterIP
+  port: 80
+
+# ---------------------------------------------------------------------------
+# Resources
+#
+# requests  -> what the scheduler reserves, and the denominator for HPA
+#              utilisation targets
+# limits    -> the cgroup ceiling; exceeding memory means OOMKill, exceeding
+#              CPU means throttling (never a kill)
+#
+# requests == limits puts the pod in the Guaranteed QoS class: it is evicted
+# last under node memory pressure. Leaving requests below limits gives
+# Burstable, which is cheaper to pack but first in line to be evicted. On a
+# single-node lab where the platform components are the memory hogs,
+# Guaranteed for the app pods is the right trade.
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 48Mi
+  limits:
+    cpu: 300m
+    memory: 96Mi
+
+# Soft heap ceiling for the Go GC. Keep it ~25% under limits.memory: the
+# difference covers goroutine stacks, the runtime's own allocations and
+# fragmentation, none of which GOMEMLIMIT governs.
+goMemLimit: "72MiB"
+
+strategy:
+  # maxUnavailable: 0 -> the replacement must be Ready before the old pod goes.
+  maxUnavailable: 0
+  maxSurge: 1
+
+# preStop pause + in-flight drain must both fit inside the grace period:
+#   preStopSleepSeconds (5) + app shutdownTimeout (20) = 25 < 45
+terminationGracePeriodSeconds: 45
+preStopSleepSeconds: 5
+
+probes:
+  # startup: allows 30 x 2s = 60s for migrations and the first Kafka metadata
+  # fetch before liveness starts counting.
+  startup:
+    periodSeconds: 2
+    failureThreshold: 30
+  liveness:
+    periodSeconds: 10
+    # 3 x 10s = 30s of consecutive failure before a restart. Tighter than this
+    # and a GC pause or a slow node can restart a healthy pod.
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    # Quicker to fail than liveness on purpose: removing a struggling pod from
+    # the load balancer is cheap and reversible; restarting it is neither.
+    failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Security context
+# ---------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  # 65532 is distroless' `nonroot` user. It must match the USER line in
+  # build/Dockerfile or the container cannot read its own binary.
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    # RuntimeDefault blocks ~44 rarely-used syscalls. Required by the
+    # `restricted` Pod Security Standard, and free for a Go service.
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  # A static Go binary needs no capabilities at all, not even the default set.
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# These services never call the API server, so the projected token is pure
+# attack surface.
+automountServiceAccountToken: false
+
+# ---------------------------------------------------------------------------
+# Configuration
+# Non-secret settings come from a shared ConfigMap mounted at /etc/kalapa;
+# secrets arrive as env vars from Secrets. Reloader restarts the pod when
+# either changes.
+# ---------------------------------------------------------------------------
+configMapName: kalapa-config
+extraConfigMap: ""      # optional per-service overlay ConfigMap
+extraConfigKey: ""      # the key within it, e.g. "kyc.yaml"
+
+# Fed into the pod-template checksum annotation so `helm upgrade` rolls the
+# Deployment when config changes even if Reloader is absent.
+config: {}
+
+envFromSecrets:
+  - kalapa-postgres-credentials
+
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+extraObjects: []
+
+deployment:
+  annotations: {}
+podAnnotations: {}
+podLabels: {}
+
+# ---------------------------------------------------------------------------
+# Ingress — only the gateway enables this.
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: nginx
+  host: kalapa.local
+  annotations: {}
+  paths:
+    - path: /
+      pathType: Prefix
+  tls: []
+
+# ---------------------------------------------------------------------------
+# Autoscaling. Off by default: on a single-node cluster an HPA competes with
+# the platform components for the same few gigabytes. Lab 4 turns it on.
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: null
+  scaleUpStabilizationSeconds: 30
+  scaleDownStabilizationSeconds: 300
+
+podDisruptionBudget:
+  # See the comment in templates/pdb.yaml: enabling this with replicaCount: 1
+  # makes `kubectl drain` hang forever.
+  enabled: false
+  minAvailable: ""
+  maxUnavailable: 1
+
+serviceMonitor:
+  enabled: true
+  # Must equal the Helm release name of kube-prometheus-stack, or Prometheus
+  # will not adopt the ServiceMonitor.
+  prometheusRelease: prometheus
+  path: /metrics
+  interval: 30s
+  scrapeTimeout: 10s
+
+networkPolicy:
+  # Off by default because minikube's default CNI silently ignores these
+  # objects — see templates/networkpolicy.yaml.
+  enabled: false
+  allowFromNamespaces: []
+  allowFromPods: []
+  allowToNamespaces:
+    - data
+    - kafka
+    - observability
+    - identity
+  extraEgress: []
+
+topologySpreadConstraints: []
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""

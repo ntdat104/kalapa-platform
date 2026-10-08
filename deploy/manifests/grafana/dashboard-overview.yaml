@@ -1,0 +1,531 @@
+# Grafana picks this up via the dashboard sidecar, which watches for the
+# grafana_dashboard label in any namespace. Storing dashboards as code is the
+# difference between "the dashboard survives a Grafana restart" and not.
+#
+# The panels are grouped to answer three questions in order:
+#   1. Is the service serving? (RED: rate, errors, duration)
+#   2. Is it about to die?     (memory vs limit, CPU throttling, GC)
+#   3. Is the async path keeping up? (produced vs consumed)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kalapa-overview-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  kalapa-overview.json: |
+    {
+      "uid": "kalapa-overview",
+      "title": "Kalapa \u2014 service overview",
+      "description": "RED metrics, container saturation and the event pipeline for the Kalapa Go services.",
+      "tags": [
+        "kalapa"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "label": "Service",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "query": "label_values(kalapa_build_info, service)",
+            "refresh": 2,
+            "includeAll": true,
+            "multi": true,
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 100,
+          "title": "Golden signals (RED)",
+          "type": "row",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "collapsed": false
+        },
+        {
+          "id": 1,
+          "title": "Request rate",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 1
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (service) (rate(http_server_requests_total{service=~\"$service\"}[5m]))",
+              "legendFormat": "{{service}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "reqps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 2,
+          "title": "Error rate (5xx share)",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 1
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (service) (rate(http_server_requests_total{service=~\"$service\",status=~\"5..\"}[5m])) / clamp_min(sum by (service) (rate(http_server_requests_total{service=~\"$service\"}[5m])), 0.001)",
+              "legendFormat": "{{service}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "percentunit"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 3,
+          "title": "Latency p50 / p95 / p99",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 1
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+              "legendFormat": "p50",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+              "legendFormat": "p95",
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+              "legendFormat": "p99",
+              "refId": "C",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 200,
+          "title": "Saturation \u2014 the numbers that decide if a pod gets OOMKilled",
+          "type": "row",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 8
+          },
+          "collapsed": false
+        },
+        {
+          "id": 4,
+          "title": "Memory: working set vs limit",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 9
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"kalapa\", container!=\"\"})",
+              "legendFormat": "{{pod}} used",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "expr": "sum by (pod) (kube_pod_container_resource_limits{namespace=\"kalapa\", resource=\"memory\"})",
+              "legendFormat": "{{pod}} limit",
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 5,
+          "title": "CPU throttling (share of periods throttled)",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 9
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=\"kalapa\"}[5m])) / clamp_min(sum by (pod) (rate(container_cpu_cfs_periods_total{namespace=\"kalapa\"}[5m])), 0.001)",
+              "legendFormat": "{{pod}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "percentunit"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 6,
+          "title": "Go heap in use vs GOMEMLIMIT",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 9
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (service) (go_memstats_heap_inuse_bytes{service=~\"$service\"})",
+              "legendFormat": "{{service}} heap",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "expr": "sum by (service) (go_memstats_next_gc_bytes{service=~\"$service\"})",
+              "legendFormat": "{{service}} next GC",
+              "refId": "B",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 7,
+          "title": "Goroutines",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 0,
+            "y": 16
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (service) (go_goroutines{service=~\"$service\"})",
+              "legendFormat": "{{service}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 8,
+          "title": "GC pause (p99 over 5m)",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 8,
+            "y": 16
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(go_gc_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+              "legendFormat": "p99",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 9,
+          "title": "Restarts in the last hour",
+          "type": "stat",
+          "gridPos": {
+            "h": 6,
+            "w": 8,
+            "x": 16,
+            "y": 16
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"kalapa\"}[1h]))",
+              "legendFormat": "{{pod}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 300,
+          "title": "Events \u2014 the async path",
+          "type": "row",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 22
+          },
+          "collapsed": false
+        },
+        {
+          "id": 10,
+          "title": "Events produced vs consumed",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 23
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (direction) (rate(kalapa_events_total{outcome=\"success\"}[5m]))",
+              "legendFormat": "{{direction}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 11,
+          "title": "Consumer lag \u2014 the number that tells you scoring is falling behind",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 23
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum by (topic) (rate(kalapa_events_total{direction=\"produce\",outcome=\"success\"}[5m])) - sum by (topic) (rate(kalapa_events_total{direction=\"consume\",outcome=\"success\"}[5m]))",
+              "legendFormat": "{{topic}} net rate",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 400,
+          "title": "Logs",
+          "type": "row",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 30
+          },
+          "collapsed": false
+        },
+        {
+          "id": 12,
+          "title": "Errors and warnings (click a trace_id to jump to Tempo)",
+          "type": "logs",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 31
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending"
+          },
+          "targets": [
+            {
+              "expr": "{namespace=\"kalapa\", service=~\"$service\"} | json | level=~\"error|warn\"",
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              }
+            }
+          ]
+        }
+      ]
+    }

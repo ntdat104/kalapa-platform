@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kalapa
+  namespace: argocd
+spec:
+  description: The Kalapa Go services
+  sourceRepos:
+    # One repo only. An Application in this project cannot be pointed at an
+    # attacker-controlled chart.
+    - __GIT_REPO_URL__
+  destinations:
+    - namespace: kalapa
+      server: https://kubernetes.default.svc
+  # Empty whitelist = no cluster-scoped resources at all. A service chart that
+  # grows a ClusterRole will be refused rather than silently granted.
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: apps
+      kind: Deployment
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor

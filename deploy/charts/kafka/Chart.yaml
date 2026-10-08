@@ -1,0 +1,9 @@
+apiVersion: v2
+name: kafka
+description: |
+  A single-node Strimzi Kafka cluster in KRaft mode, plus the topic the KYC
+  and scoring services exchange. The Strimzi operator is installed separately
+  (deploy/argocd/platform/02-strimzi-operator.yaml).
+type: application
+version: 0.1.0
+appVersion: "4.3"

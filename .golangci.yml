@@ -1,0 +1,33 @@
+# golangci-lint configuration. Deliberately short: a linter config nobody can
+# read is one everybody disables.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose     # an unclosed response body leaks a connection per request
+    - errcheck
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+
+  settings:
+    gosec:
+      excludes:
+        # G104 duplicates errcheck.
+        - G104
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck, bodyclose]
+
+formatters:
+  enable:
+    - gofmt

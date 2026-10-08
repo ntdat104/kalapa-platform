@@ -1,0 +1,50 @@
+# Scoring is a Kafka consumer with a read-only HTTP surface.
+go-service:
+  nameOverride: scoring
+  fullnameOverride: scoring
+
+  image:
+    repository: ghcr.io/kalapa-lab/kalapa-scoring
+    tag: latest
+
+  extraConfigMap: kalapa-scoring-config
+  extraConfigKey: scoring.yaml
+
+  envFromSecrets:
+    - kalapa-postgres-credentials
+
+  ingress:
+    enabled: false
+
+  # One replica, deliberately. The topic has one partition, so a second replica
+  # would join the consumer group, be assigned nothing, and idle. Scaling a
+  # consumer past the partition count is the most common pointless scale-out
+  # in a Kafka system — lab 3 has you raise both together and watch the
+  # rebalance in the logs.
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 48Mi
+    limits:
+      cpu: 300m
+      memory: 96Mi
+  goMemLimit: "72MiB"
+
+  probes:
+    startup:
+      periodSeconds: 2
+      failureThreshold: 45
+
+  networkPolicy:
+    enabled: false
+    allowFromPods:
+      - gateway
+    allowToNamespaces:
+      - data
+      - kafka
+      - observability
+
+  config:
+    marker: scoring-v1

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: gateway
+description: Kalapa gateway service
+type: application
+version: 0.1.0
+appVersion: "latest"
+dependencies:
+  # file:// keeps the base chart in this repo rather than a chart registry, so
+  # Argo CD resolves it from the same commit it is syncing. A registry-hosted
+  # base chart would let the chart and the app drift between syncs.
+  - name: go-service
+    version: 0.1.0
+    repository: file://../go-service
