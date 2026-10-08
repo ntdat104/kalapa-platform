@@ -1,21 +1,21 @@
-{{ include "go-service.fullname" . }} deployed to namespace {{ .Release.Namespace }}.
+{{ include "go-service.fullname" . }} đã được deploy vào namespace {{ .Release.Namespace }}.
 
-  Rollout status
+  Theo dõi quá trình rollout
     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "go-service.fullname" . }}
 
-  Health (admin port, never exposed through the Ingress)
+  Kiểm tra sức khoẻ (port quản trị, không bao giờ lộ ra qua Ingress)
     kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "go-service.fullname" . }} {{ .Values.ports.admin }}:{{ .Values.ports.admin }}
     curl -s localhost:{{ .Values.ports.admin }}/healthz/ready | jq
     curl -s localhost:{{ .Values.ports.admin }}/metrics | head
 
 {{- if .Values.ingress.enabled }}
 
-  Public URL
+  Địa chỉ công khai
     http://{{ .Values.ingress.host }}
-  Add to /etc/hosts:
+  Thêm vào /etc/hosts:
     $(minikube ip)  {{ .Values.ingress.host }}
 {{- end }}
 
-  Is Prometheus actually scraping it?
+  Prometheus có thực sự đang scrape service này không?
     kubectl -n observability get servicemonitor {{ include "go-service.fullname" . }}
-    # then check Status > Targets in the Prometheus UI
+    # rồi mở Status > Targets trên giao diện Prometheus

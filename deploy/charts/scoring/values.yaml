@@ -1,4 +1,4 @@
-# Scoring is a Kafka consumer with a read-only HTTP surface.
+# Scoring là một consumer Kafka, kèm một bề mặt HTTP chỉ để đọc.
 go-service:
   nameOverride: scoring
   fullnameOverride: scoring
@@ -16,11 +16,10 @@ go-service:
   ingress:
     enabled: false
 
-  # One replica, deliberately. The topic has one partition, so a second replica
-  # would join the consumer group, be assigned nothing, and idle. Scaling a
-  # consumer past the partition count is the most common pointless scale-out
-  # in a Kafka system — lab 3 has you raise both together and watch the
-  # rebalance in the logs.
+  # Một replica, có chủ ý. Topic chỉ có một partition, nên replica thứ hai sẽ
+  # vào consumer group, không được giao gì, rồi ngồi không. Scale consumer vượt
+  # số partition là kiểu scale vô ích phổ biến nhất trong một hệ Kafka — lab 3
+  # bắt bạn tăng cả hai cùng lúc rồi quan sát rebalance trong log.
   replicaCount: 1
 
   resources:

@@ -6,17 +6,17 @@ import (
 	"time"
 )
 
-// InitTracing with an endpoint builds the OTel resource, and resource.Merge
-// refuses to combine resources whose schema URLs differ. Pinning the semconv
-// import independently of the SDK version therefore kills the process at
-// startup with "conflicting Schema URL" — a failure no test that leaves
-// tracing disabled will ever see.
+// InitTracing khi có endpoint sẽ dựng resource của OTel, mà resource.Merge thì
+// từ chối gộp hai resource có schema URL khác nhau. Vì vậy ghim import semconv
+// độc lập với phiên bản SDK sẽ giết process ngay lúc khởi động với lỗi
+// "conflicting Schema URL" — một kiểu hỏng mà không test nào để tracing tắt có
+// thể thấy được.
 //
-// This test exercises the resource-building path specifically. No collector is
-// listening, which also pins down a second behaviour worth knowing: exporter
-// construction waits out its dial budget rather than failing, so a pod whose
-// collector is down starts ~10s slower. The startupProbe's budget covers that;
-// the short parent context here keeps the test fast.
+// Test này chạy riêng đường dựng resource. Không có collector nào lắng nghe,
+// nhờ đó nó cũng ghim lại một hành vi thứ hai đáng biết: việc tạo exporter sẽ
+// chờ hết ngân sách kết nối chứ không thất bại ngay, nên một pod có collector
+// chết sẽ khởi động chậm hơn khoảng 10 giây. Ngân sách của startupProbe che
+// được khoảng đó; còn context cha ngắn ở đây giữ cho test chạy nhanh.
 func TestInitTracingBuildsAValidResource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
@@ -32,9 +32,9 @@ func TestInitTracingBuildsAValidResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InitTracing: %v", err)
 	}
-	// Bounded, like cmd/*/main.go: shutdown flushes the batch processor, and
-	// with nothing listening that flush would otherwise burn the exporter's
-	// full retry budget.
+	// Có giới hạn thời gian, giống cmd/*/main.go: shutdown sẽ flush bộ xử lý
+	// theo lô, và khi không có ai lắng nghe thì lần flush đó sẽ đốt hết ngân
+	// sách thử lại của exporter.
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 		defer stopCancel()
@@ -44,14 +44,14 @@ func TestInitTracingBuildsAValidResource(t *testing.T) {
 	if tracer == nil {
 		t.Fatal("tracer is nil")
 	}
-	// Starting a span exercises the provider end to end.
+	// Mở một span là cách chạy thử provider từ đầu tới cuối.
 	_, span := tracer.Start(context.Background(), "probe")
 	span.End()
 }
 
-// With tracing off the caller must still get a usable tracer, so no call site
-// needs a nil check and the services stay runnable with the whole
-// observability namespace deleted.
+// Khi tracing tắt, bên gọi vẫn phải nhận được một tracer dùng được, để không
+// chỗ gọi nào phải kiểm tra nil và các service vẫn chạy được ngay cả khi xoá
+// sạch namespace observability.
 func TestInitTracingDisabledReturnsNoopTracer(t *testing.T) {
 	for _, tc := range []struct {
 		name string

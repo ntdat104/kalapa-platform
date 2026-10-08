@@ -1,16 +1,16 @@
-// Package logging produces structured JSON logs that Grafana Alloy can ship to
-// Loki without any parsing stage, and that Grafana can pivot from a log line
-// straight into the matching trace.
+// Package logging sinh ra log JSON có cấu trúc để Grafana Alloy đẩy thẳng vào
+// Loki mà không cần bước phân tích nào, và để Grafana nhảy từ một dòng log
+// sang đúng trace tương ứng.
 //
-// The contract with the observability stack is three fields:
+// Giao kèo với hệ observability gồm ba trường:
 //
-//	level     -> promoted to a Loki label by the Alloy pipeline
-//	trace_id  -> matched by the Loki datasource's derivedField regex -> Tempo
-//	span_id   -> narrows the jump to the exact span
+//	level     -> được Alloy nâng thành label của Loki
+//	trace_id  -> khớp bởi regex derivedField của Loki datasource -> Tempo
+//	span_id   -> thu hẹp cú nhảy xuống đúng span
 //
-// YAS does the same thing through logback's `traceId=%X{traceId:-}` pattern
-// plus an OTel MDC appender; in Go we read the IDs off the context directly,
-// which removes the MDC/thread-local problem entirely.
+// YAS làm điều tương tự bằng pattern `traceId=%X{traceId:-}` của logback cộng
+// thêm MDC appender của OTel; trong Go ta đọc thẳng các ID từ context, nên bỏ
+// hẳn được vấn đề MDC/thread-local.
 package logging
 
 import (
@@ -24,9 +24,9 @@ import (
 
 type traceHandler struct{ slog.Handler }
 
-// Handle enriches every record with the active trace and span id. Because the
-// handler sits at the top of the chain it also covers logs emitted by library
-// code that only has a context.
+// Handle gắn thêm trace id và span id đang hoạt động vào mọi bản ghi. Vì
+// handler này nằm trên cùng chuỗi xử lý, nó phủ cả log do thư viện bên ngoài
+// sinh ra khi chúng chỉ có context.
 func (h traceHandler) Handle(ctx context.Context, rec slog.Record) error {
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		rec.AddAttrs(
@@ -45,15 +45,15 @@ func (h traceHandler) WithGroup(name string) slog.Handler {
 	return traceHandler{h.Handler.WithGroup(name)}
 }
 
-// New builds the process logger and installs it as the slog default so any
-// package that calls slog.InfoContext gets the same format.
+// New dựng logger cho cả process và đặt nó làm mặc định của slog, để mọi
+// package gọi slog.InfoContext đều ra cùng một định dạng.
 func New(service, version, env, level string) *slog.Logger {
 	base := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLevel(level),
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-			// "msg" and "time" are the only keys Loki's JSON parser treats
-			// specially in the dashboards shipped with this repo; renaming
-			// them here would silently break those panels.
+			// "msg" và "time" là hai khoá duy nhất được bộ phân tích JSON của
+			// Loki xử lý đặc biệt trong các dashboard kèm theo repo này; đổi
+			// tên chúng ở đây sẽ âm thầm làm hỏng các panel đó.
 			if a.Key == slog.SourceKey {
 				return slog.Attr{}
 			}

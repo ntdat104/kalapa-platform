@@ -1,5 +1,5 @@
-# golangci-lint configuration. Deliberately short: a linter config nobody can
-# read is one everybody disables.
+# Cấu hình golangci-lint. Cố ý viết ngắn: một file cấu hình linter không ai đọc
+# nổi là một file ai cũng tắt đi.
 version: "2"
 
 linters:
@@ -16,7 +16,7 @@ linters:
   settings:
     gosec:
       excludes:
-        # G104 duplicates errcheck.
+        # G104 trùng với errcheck.
         - G104
     revive:
       rules:

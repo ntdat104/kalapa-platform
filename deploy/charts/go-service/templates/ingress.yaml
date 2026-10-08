@@ -27,9 +27,9 @@ spec:
             backend:
               service:
                 name: {{ $fullName }}
-                # Always the http port. Routing the Ingress at the admin port
-                # would publish /metrics and the health endpoints to the
-                # internet, which is how clusters leak their topology.
+                # Luôn là port http. Trỏ Ingress vào port admin sẽ công khai
+                # /metrics và các endpoint health ra Internet — đó là cách một
+                # cluster để lộ cấu trúc của chính nó.
                 port:
                   number: {{ $svcPort }}
           {{- end }}

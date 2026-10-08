@@ -1,14 +1,14 @@
-// Package config loads service configuration using the same layering strategy
-// the YAS reference stack uses for Spring Boot:
+// Package config nạp cấu hình của service theo đúng cách phân tầng mà YAS
+// dùng cho Spring Boot:
 //
-//  1. built-in defaults (compiled in)
-//  2. a YAML file mounted from a ConfigMap   (CONFIG_FILE, default /etc/kalapa/config.yaml)
-//  3. an optional per-service YAML overlay   (CONFIG_EXTRA_FILES, comma separated)
-//  4. environment variables / Secret refs    (highest precedence)
+//  1. giá trị mặc định (biên dịch sẵn trong code)
+//  2. một file YAML mount từ ConfigMap    (CONFIG_FILE, mặc định /etc/kalapa/config.yaml)
+//  3. một lớp phủ YAML riêng từng service (CONFIG_EXTRA_FILES, ngăn cách bằng dấu phẩy)
+//  4. biến môi trường / Secret            (thắng tất cả)
 //
-// Layers 2 and 3 mirror SPRING_CONFIG_ADDITIONAL_LOCATION; layer 4 mirrors
-// envFrom: secretRef. Keeping credentials in layer 4 only is deliberate — the
-// ConfigMap is world-readable inside the namespace, the Secret is not.
+// Tầng 2 và 3 tương ứng SPRING_CONFIG_ADDITIONAL_LOCATION; tầng 4 tương ứng
+// envFrom: secretRef. Việc chỉ để thông tin đăng nhập ở tầng 4 là có chủ ý —
+// nội dung ConfigMap ai trong namespace cũng đọc được, Secret thì không.
 package config
 
 import (
@@ -21,9 +21,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the union of every knob any Kalapa service understands. Services
-// ignore the sections they do not use; one struct keeps the mounted
-// kalapa-configuration ConfigMap identical across all of them.
+// Config gom mọi tham số mà bất kỳ service Kalapa nào hiểu được. Service bỏ
+// qua những phần nó không dùng; dùng chung một struct giúp ConfigMap
+// kalapa-config giống hệt nhau ở mọi service.
 type Config struct {
 	Service  Service  `yaml:"service"`
 	Server   Server   `yaml:"server"`
@@ -42,9 +42,9 @@ type Service struct {
 }
 
 type Server struct {
-	// HTTPPort serves business traffic and is the only port behind the Service's
-	// `http` port. AdminPort serves /healthz/* and /metrics and is never exposed
-	// through the Ingress — same split as YAS's server.port vs management.server.port.
+	// HTTPPort phục vụ traffic nghiệp vụ và là port duy nhất nằm sau cổng `http`
+	// của Service. AdminPort phục vụ /healthz/* và /metrics, không bao giờ lộ ra
+	// qua Ingress — đúng kiểu tách server.port và management.server.port của YAS.
 	HTTPPort        int           `yaml:"httpPort"`
 	AdminPort       int           `yaml:"adminPort"`
 	ReadTimeout     time.Duration `yaml:"readTimeout"`
@@ -53,9 +53,9 @@ type Server struct {
 }
 
 type Database struct {
-	// URL is a libpq/pgx DSN. Username and Password are injected separately so
-	// the non-secret half can live in the ConfigMap and only the credentials
-	// come from the Secret.
+	// URL là chuỗi DSN kiểu libpq/pgx. Username và Password được tiêm riêng để
+	// nửa không nhạy cảm nằm được trong ConfigMap, còn thông tin đăng nhập thì
+	// chỉ đến từ Secret.
 	URL      string `yaml:"url"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
@@ -76,8 +76,8 @@ type Tracing struct {
 }
 
 type Auth struct {
-	// Enabled toggles JWT verification at the gateway. Off by default so the
-	// stack is usable before Keycloak finishes its first start.
+	// Enabled bật/tắt việc verify JWT ở gateway. Mặc định tắt để hệ thống dùng
+	// được ngay cả khi Keycloak chưa khởi động xong lần đầu.
 	Enabled   bool   `yaml:"enabled"`
 	IssuerURL string `yaml:"issuerUrl"`
 	Audience  string `yaml:"audience"`
@@ -104,8 +104,8 @@ func defaults() Config {
 	}
 }
 
-// Load resolves all four layers. serviceName seeds Service.Name when neither
-// the YAML nor SERVICE_NAME provides one.
+// Load giải quyết cả bốn tầng. serviceName là giá trị khởi đầu cho Service.Name
+// khi cả YAML lẫn SERVICE_NAME đều không cung cấp.
 func Load(serviceName string) (Config, error) {
 	cfg := defaults()
 	cfg.Service.Name = serviceName
@@ -121,8 +121,8 @@ func Load(serviceName string) (Config, error) {
 		}
 		raw, err := os.ReadFile(f)
 		if os.IsNotExist(err) {
-			// Absent files are not fatal: `go run ./cmd/kyc` on a laptop has no
-			// ConfigMap, and an optional overlay is optional by definition.
+			// File không tồn tại không phải lỗi: `go run ./cmd/kyc` trên laptop
+			// không có ConfigMap nào, và lớp phủ tuỳ chọn thì đúng nghĩa là tuỳ chọn.
 			continue
 		}
 		if err != nil {
@@ -175,8 +175,8 @@ func applyEnv(c *Config) {
 	strEnv("SERVICE_SCORING_URL", &c.Services.Scoring)
 }
 
-// DSN assembles the pgx connection string, injecting the credentials that
-// arrived through the Secret rather than the ConfigMap.
+// DSN ghép chuỗi kết nối cho pgx, chèn thông tin đăng nhập vốn đến từ Secret
+// chứ không phải từ ConfigMap.
 func (d Database) DSN() string {
 	if d.URL == "" {
 		return ""

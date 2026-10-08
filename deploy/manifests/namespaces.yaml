@@ -1,18 +1,18 @@
-# Namespaces are created declaratively rather than by `--create-namespace` so
-# their labels are owned by Git. Two label families matter:
+# Namespace được tạo theo kiểu khai báo thay vì bằng `--create-namespace`, để
+# nhãn của chúng do Git sở hữu. Có hai họ nhãn đáng quan tâm:
 #
-#   pod-security.kubernetes.io/*  -> Pod Security Admission. `restricted` is
-#       the strictest built-in profile: no privilege escalation, no root, all
-#       capabilities dropped, seccomp required. The go-service chart's
-#       securityContext is written to satisfy it, so this label is what proves
-#       those settings are real rather than decorative.
-#   kubernetes.io/metadata.name   -> set automatically by the API server; the
-#       NetworkPolicy namespaceSelectors key off it.
+#   pod-security.kubernetes.io/*  -> Pod Security Admission. `restricted` là
+#       profile nghiêm nhất có sẵn: không leo thang quyền, không chạy root, bỏ
+#       hết capability, bắt buộc có seccomp. securityContext của chart go-service
+#       được viết để thoả nó, nên chính nhãn này là bằng chứng các thiết lập kia
+#       là thật chứ không phải trang trí.
+#   kubernetes.io/metadata.name   -> do API server tự gán; các namespaceSelector
+#       của NetworkPolicy bám vào nó.
 #
-# `warn` and `audit` without `enforce` would only log violations. `enforce` is
-# used where it can be, and deliberately relaxed where a component genuinely
-# needs more (observability runs a node-level log collector; data operators
-# run privileged init containers).
+# Dùng `warn` và `audit` mà không có `enforce` thì chỉ ghi log vi phạm. Ở đây
+# `enforce` được dùng ở mọi nơi có thể, và được nới lỏng có chủ ý ở những chỗ mà
+# một thành phần thực sự cần nhiều quyền hơn (observability chạy một bộ thu thập
+# log ở mức node; các operator dữ liệu chạy init container đặc quyền).
 ---
 apiVersion: v1
 kind: Namespace
@@ -28,7 +28,7 @@ kind: Namespace
 metadata:
   name: data
   labels:
-    # CloudNativePG's instance pods need a few things `restricted` forbids.
+    # Các pod instance của CloudNativePG cần vài thứ mà `restricted` cấm.
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/warn: restricted
 ---
@@ -53,6 +53,6 @@ kind: Namespace
 metadata:
   name: observability
   labels:
-    # node-exporter mounts the host filesystem and shares the host network;
-    # neither is permitted under baseline.
+    # node-exporter mount filesystem của host và dùng chung network của host;
+    # cả hai đều không được phép dưới mức baseline.
     pod-security.kubernetes.io/enforce: privileged

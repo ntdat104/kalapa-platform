@@ -1,17 +1,17 @@
-# The "app of apps" root. This is the single object you apply by hand; it
-# pulls in everything else, and from then on the cluster's desired state is
-# whatever is in Git.
+# Gốc của mô hình "app of apps". Đây là object DUY NHẤT bạn apply bằng tay; nó
+# kéo theo mọi thứ còn lại, và từ đó trở đi trạng thái mong muốn của cluster
+# chính là thứ nằm trong Git.
 #
-# It syncs the two directories of Application manifests. Argo CD creates those
-# Applications, each of which then syncs its own source. The root app's job is
-# ordering and nothing else.
+# Nó đồng bộ các thư mục chứa Application manifest. Argo CD tạo ra những
+# Application đó, rồi mỗi cái tự đồng bộ nguồn của riêng nó. Việc của root app
+# chỉ là sắp thứ tự, không gì khác.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: root
   namespace: argocd
-  # Without this finalizer, deleting the root Application orphans every child:
-  # the Applications vanish from Argo CD while their workloads keep running.
+  # Thiếu finalizer này, xoá root Application sẽ bỏ rơi mọi Application con:
+  # chúng biến mất khỏi Argo CD trong khi workload vẫn tiếp tục chạy.
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -22,18 +22,19 @@ spec:
     path: deploy/argocd
     directory:
       recurse: true
-      # Only the Application/AppProject manifests, not the charts next to them.
+      # Chỉ lấy manifest Application/AppProject, không lấy các chart nằm cạnh.
       include: '{projects/*.yaml,platform/*.yaml,apps/*.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
   syncPolicy:
     automated:
-      # prune: delete objects removed from Git. Off, and Git stops being the
-      # source of truth the moment you delete a file.
+      # prune: xoá khỏi cluster những object đã bị xoá khỏi Git. Tắt nó đi là
+      # Git thôi làm nguồn sự thật ngay khoảnh khắc bạn xoá một file.
       prune: true
-      # selfHeal: revert manual `kubectl edit`. This is the setting that makes
-      # the cluster actually converge; expect it to undo your debugging edits.
+      # selfHeal: hoàn nguyên những lần `kubectl edit` chạy tay. Đây là thiết
+      # lập làm cho cluster thực sự hội tụ; hãy chuẩn bị tinh thần nó sẽ xoá cả
+      # những chỉnh sửa bạn đang dùng để gỡ lỗi.
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

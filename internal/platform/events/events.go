@@ -1,13 +1,13 @@
-// Package events is the Kafka edge: a producer, a consumer loop, and the
-// trace-context plumbing that keeps a request's trace intact across the async
-// hop.
+// Package events là phần tiếp giáp với Kafka: một producer, một vòng lặp
+// consumer, và phần truyền trace context giữ cho trace của một request không
+// bị đứt khi đi qua chặng bất đồng bộ.
 //
-// The interesting part is carrier.go. HTTP propagation is free (otelhttp does
-// it), but nothing instruments Kafka for you: if the producer does not write
-// `traceparent` into the record headers and the consumer does not read it back
-// out, Tempo shows two unrelated traces and the service graph loses the edge
-// kyc -> scoring. That is the single most common gap in a microservice tracing
-// setup, so it is wired explicitly here rather than hidden in a wrapper.
+// Phần đáng chú ý nằm ở carrier.go. Truyền context qua HTTP là miễn phí
+// (otelhttp lo), nhưng không có gì tự instrument Kafka cho bạn: nếu producer
+// không ghi `traceparent` vào header của bản ghi và consumer không đọc nó ra,
+// Tempo sẽ hiện hai trace không liên quan và service graph mất cạnh
+// kyc -> scoring. Đó là mảnh hay bị bỏ sót nhất trong một hệ tracing
+// microservice, nên nó được nối tường minh ở đây thay vì giấu trong một lớp bọc.
 package events
 
 import (
@@ -27,7 +27,7 @@ import (
 	"github.com/kalapa-lab/kalapa-platform/internal/platform/obs"
 )
 
-// Producer publishes domain events.
+// Producer phát các sự kiện nghiệp vụ.
 type Producer struct {
 	client  *kgo.Client
 	topic   string
@@ -40,9 +40,9 @@ func NewProducer(brokers []string, topic string, tracer trace.Tracer, metrics *o
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
 		kgo.DefaultProduceTopic(topic),
-		// Idempotent production is on by default in franz-go; acks=all makes
-		// it meaningful on a multi-broker cluster. On the single-broker lab
-		// cluster it costs nothing and keeps the config honest.
+		// franz-go bật sẵn chế độ phát idempotent; acks=all làm điều đó có ý
+		// nghĩa trên cluster nhiều broker. Trên cluster lab một broker thì nó
+		// chẳng tốn gì và giữ cho cấu hình trung thực.
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.ProducerBatchMaxBytes(1<<20),
 		kgo.RecordRetries(5),
@@ -53,9 +53,9 @@ func NewProducer(brokers []string, topic string, tracer trace.Tracer, metrics *o
 	return &Producer{client: client, topic: topic, tracer: tracer, metrics: metrics, log: log}, nil
 }
 
-// Publish serialises payload as JSON and sends it synchronously, so the HTTP
-// handler that called it can report a real failure instead of lying to the
-// caller about a write that never landed.
+// Publish mã hoá payload thành JSON và gửi ĐỒNG BỘ, để HTTP handler gọi nó
+// biết được thất bại thật, thay vì nói dối người gọi về một lần ghi chưa hề
+// xảy ra.
 func (p *Producer) Publish(ctx context.Context, key string, payload any) error {
 	ctx, span := p.tracer.Start(ctx, "produce "+p.topic,
 		trace.WithSpanKind(trace.SpanKindProducer),
@@ -75,8 +75,8 @@ func (p *Producer) Publish(ctx context.Context, key string, payload any) error {
 	}
 
 	rec := &kgo.Record{Topic: p.topic, Key: []byte(key), Value: body}
-	// Inject AFTER the producer span starts: the consumer must link to this
-	// span, not to the HTTP span that preceded it.
+	// Inject SAU khi span producer đã bắt đầu: consumer phải nối vào span này,
+	// không phải vào span HTTP đứng trước nó.
 	otel.GetTextMapPropagator().Inject(ctx, &RecordCarrier{Record: rec})
 
 	if err := p.client.ProduceSync(ctx, rec).FirstErr(); err != nil {
@@ -92,9 +92,9 @@ func (p *Producer) Publish(ctx context.Context, key string, payload any) error {
 	return nil
 }
 
-// Ping is the readiness check: it asks the cluster for metadata rather than
-// just checking the TCP socket, which is what catches "broker up, topic's
-// partitions have no leader yet".
+// Ping là phép kiểm tra readiness: nó hỏi cluster lấy metadata chứ không chỉ
+// kiểm tra socket TCP — nhờ vậy bắt được tình huống "broker đã lên nhưng
+// partition của topic chưa có leader".
 func (p *Producer) Ping(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -103,12 +103,12 @@ func (p *Producer) Ping(ctx context.Context) error {
 
 func (p *Producer) Close() { p.client.Close() }
 
-// Handler processes one decoded event. Returning an error marks the record as
-// failed; the consumer logs it and still advances the offset, because a
-// poison message must not wedge the partition on a lab cluster with no DLQ.
+// Handler xử lý một sự kiện đã giải mã. Trả về lỗi nghĩa là bản ghi thất bại;
+// consumer ghi log rồi vẫn tiến offset, vì một bản ghi độc không được phép làm
+// kẹt partition trên cluster lab vốn không có dead-letter queue.
 type Handler func(ctx context.Context, key string, value []byte) error
 
-// Consumer is a single-goroutine consumer-group loop.
+// Consumer là vòng lặp consumer-group chạy trên một goroutine duy nhất.
 type Consumer struct {
 	client  *kgo.Client
 	topic   string
@@ -122,13 +122,13 @@ func NewConsumer(brokers []string, topic, group string, tracer trace.Tracer, met
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumerGroup(group),
 		kgo.ConsumeTopics(topic),
-		// Commit only after the handler succeeds (at-least-once). Autocommit
-		// would be at-most-once in disguise: a pod evicted mid-handler would
-		// drop the event silently.
+		// Chỉ commit SAU khi handler thành công (at-least-once). Autocommit
+		// thực chất là at-most-once đội lốt: một pod bị evict giữa chừng sẽ làm
+		// mất sự kiện mà không ai hay.
 		kgo.DisableAutoCommit(),
 		kgo.FetchMaxBytes(1<<20),
-		// A short rebalance timeout keeps a rolling restart from parking the
-		// group for 45s while the new pod waits to be assigned partitions.
+		// Timeout rebalance ngắn giúp một lần rolling restart không treo cả
+		// group 45 giây trong lúc pod mới chờ được giao partition.
 		kgo.SessionTimeout(20*time.Second),
 	)
 	if err != nil {
@@ -143,8 +143,8 @@ func (c *Consumer) Ping(ctx context.Context) error {
 	return c.client.Ping(ctx)
 }
 
-// Run blocks until ctx is cancelled. Pass it to httpx.Server.Go so its
-// lifetime matches the HTTP listeners' and SIGTERM drains both together.
+// Run chặn cho tới khi ctx bị huỷ. Hãy truyền nó vào httpx.Server.Go để vòng
+// đời của nó khớp với các listener HTTP, và SIGTERM xả cả hai cùng lúc.
 func (c *Consumer) Run(ctx context.Context, handle Handler) error {
 	defer c.client.Close()
 	c.log.Info("kafka consumer started", slog.String("topic", c.topic))
@@ -152,8 +152,8 @@ func (c *Consumer) Run(ctx context.Context, handle Handler) error {
 	for {
 		fetches := c.client.PollFetches(ctx)
 		if ctx.Err() != nil {
-			// Commit whatever completed before the drain started so the
-			// replacement pod does not reprocess it.
+			// Commit nốt phần đã xử lý xong trước khi bắt đầu xả, để pod thay
+			// thế không xử lý lại phần đó.
 			commitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			err := c.client.CommitUncommittedOffsets(commitCtx)
 			cancel()
@@ -181,8 +181,8 @@ func (c *Consumer) Run(ctx context.Context, handle Handler) error {
 }
 
 func (c *Consumer) process(ctx context.Context, rec *kgo.Record, handle Handler) {
-	// Extract first: this restores the producer's trace so the consumer span
-	// becomes a child of it and the trace spans both services.
+	// Extract trước tiên: việc này khôi phục trace của producer, nhờ đó span
+	// consumer trở thành con của nó và trace trải qua cả hai service.
 	ctx = otel.GetTextMapPropagator().Extract(ctx, &RecordCarrier{Record: rec})
 
 	ctx, span := c.tracer.Start(ctx, "consume "+rec.Topic,

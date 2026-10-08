@@ -1,16 +1,16 @@
 {{- if .Values.networkPolicy.enabled }}
 {{/*
-NetworkPolicy is default-allow until the first policy selects a pod; after
-that, the selected pod is default-deny for the selected directions. So the
-first policy you write locks everything down, and you must then re-permit DNS
-and every legitimate flow. That is the single most common way a NetworkPolicy
-rollout breaks a cluster.
+NetworkPolicy là MẶC ĐỊNH CHO PHÉP cho tới khi có policy đầu tiên chọn một pod;
+từ lúc đó, pod được chọn thành MẶC ĐỊNH TỪ CHỐI cho các hướng mà policy liệt kê.
+Nghĩa là policy đầu tiên bạn viết sẽ khoá sạch mọi thứ, và sau đó bạn phải mở
+lại DNS cùng mọi luồng hợp lệ. Đó là cách phổ biến nhất khiến một đợt triển khai
+NetworkPolicy làm hỏng cluster.
 
-NOTE: minikube's default CNI does NOT enforce NetworkPolicy. These objects will
-be created and will do nothing until you start the cluster with a CNI that
-does (`minikube start --cni=calico`). docs/02-kubernetes-deep-dive.md walks
-through proving enforcement either way — a policy you have not tested is a
-policy you do not have.
+LƯU Ý: CNI mặc định của minikube KHÔNG thực thi NetworkPolicy. Các object này
+vẫn được tạo và chẳng làm gì cả, cho tới khi bạn dựng cluster với một CNI có
+thực thi (`minikube start --cni=calico`). docs/02-kubernetes-deep-dive.md hướng
+dẫn cách tự kiểm chứng cả hai trường hợp — một policy bạn chưa kiểm chứng là một
+policy bạn không có.
 */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -26,7 +26,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Prometheus must reach the admin port or every target goes down at once.
+    # Prometheus phải tới được port quản trị, nếu không mọi target down cùng lúc.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -57,8 +57,8 @@ spec:
           protocol: TCP
     {{- end }}
   egress:
-    # DNS first. Forgetting this is the classic failure: every outbound call
-    # fails at name resolution and the logs blame the destination service.
+    # DNS trước tiên. Quên nó là lỗi kinh điển: mọi lời gọi ra ngoài đều chết ở
+    # bước phân giải tên, trong khi log lại đổ lỗi cho service đích.
     - to:
         - namespaceSelector:
             matchLabels:

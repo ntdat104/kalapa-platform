@@ -20,9 +20,9 @@ realm:
     password: officer
 
 jvm:
-  # Keycloak is the single largest consumer in this stack. 512m heap inside a
-  # 768Mi limit is the floor that still starts reliably; below it the realm
-  # import OOMs partway through and leaves a half-created realm.
+  # Keycloak là thành phần ngốn bộ nhớ nhất trong cả stack này. Heap 512m bên
+  # trong giới hạn 768Mi là ngưỡng sàn mà nó vẫn khởi động ổn định; thấp hơn thì
+  # quá trình nhập realm bị OOM giữa chừng và để lại một realm dở dang.
   heap: 512m
 
 resources:

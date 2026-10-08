@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One screen that answers "what is actually wrong".
+# Một màn hình duy nhất trả lời câu hỏi "rốt cuộc đang hỏng cái gì".
 source "$(dirname "$0")/lib.sh"
 
 info "Argo CD applications"

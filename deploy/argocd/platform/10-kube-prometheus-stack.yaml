@@ -1,9 +1,9 @@
-# Prometheus + Alertmanager + Grafana + the Prometheus Operator, in one chart.
+# Prometheus + Alertmanager + Grafana + Prometheus Operator, gói trong một chart.
 #
-# The operator is the important part: it turns ServiceMonitor and PodMonitor
-# resources into scrape configs. Without it you would be editing
-# prometheus.yml by hand, which is exactly the workflow Kubernetes makes
-# untenable (pods come and go, their IPs change every restart).
+# Operator mới là phần quan trọng: nó biến các tài nguyên ServiceMonitor và
+# PodMonitor thành cấu hình scrape. Không có nó, bạn sẽ phải sửa prometheus.yml
+# bằng tay — đúng cái lối làm việc mà Kubernetes khiến không thể duy trì nổi
+# (pod sinh ra rồi mất đi, IP đổi sau mỗi lần restart).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -23,36 +23,36 @@ spec:
         # ---- Prometheus ----
         prometheus:
           prometheusSpec:
-            # 24h of 30s samples for ~15 targets is a few hundred MB. Default
-            # is 10d, which fills a laptop disk and then silently stops
-            # ingesting.
+            # 24 giờ dữ liệu lấy mỗi 30 giây cho khoảng 15 target là vài trăm
+            # MB. Mặc định là 10 ngày, đủ làm đầy đĩa laptop rồi âm thầm ngừng
+            # thu thập.
             retention: 24h
             retentionSize: 2GB
             scrapeInterval: 30s
             evaluationInterval: 30s
 
-            # THE setting that trips everyone up.
+            # ĐÂY là thiết lập làm ai cũng vấp.
             #
-            # By default the chart sets these selectors to `release: <name>`,
-            # so Prometheus only adopts ServiceMonitors carrying that label.
-            # Setting them to false (an empty selector) makes it adopt every
-            # ServiceMonitor in the cluster, which is what you want in a lab.
+            # Mặc định chart đặt các selector này thành `release: <tên>`, nên
+            # Prometheus chỉ nhận những ServiceMonitor mang đúng nhãn đó. Đặt
+            # chúng thành false (selector rỗng) khiến nó nhận MỌI ServiceMonitor
+            # trong cluster — điều bạn muốn khi đang học.
             #
-            # The go-service chart still stamps `release: prometheus` on its
-            # ServiceMonitor, so switching this back to the default is a
-            # one-line change when you want to practise the strict behaviour.
+            # Chart go-service vẫn gắn `release: prometheus` lên ServiceMonitor
+            # của nó, nên đổi dòng này về mặc định chỉ là sửa một dòng khi bạn
+            # muốn tập với hành vi nghiêm ngặt.
             serviceMonitorSelectorNilUsesHelmValues: false
             podMonitorSelectorNilUsesHelmValues: false
             ruleSelectorNilUsesHelmValues: false
 
-            # Lets the Tempo metrics-generator push span-derived RED metrics
-            # in. Without it Tempo's service graph has no metrics backend and
-            # the Grafana service map stays empty.
+            # Cho phép metrics-generator của Tempo đẩy vào đây các metric RED
+            # suy ra từ span. Thiếu nó, service graph của Tempo không có nơi lưu
+            # metric và service map trên Grafana sẽ trống trơn.
             enableRemoteWriteReceiver: true
 
-            # Exemplars link a histogram bucket to a specific trace ID — the
-            # "click the latency spike, land on the slow trace" workflow.
-            # Requires the exemplar storage feature flag.
+            # Exemplar nối một bucket của histogram với một trace ID cụ thể —
+            # chính là thao tác "bấm vào đỉnh latency, mở ra đúng trace chậm".
+            # Cần bật cờ tính năng lưu exemplar.
             enableFeatures:
               - exemplar-storage
 
@@ -72,8 +72,8 @@ spec:
                       storage: 3Gi
 
         # ---- Alertmanager ----
-        # Disabled: ~80Mi for a component with nowhere to send alerts in a lab.
-        # Lab 8 turns it back on and routes to a local webhook receiver.
+        # Tắt: tốn khoảng 80Mi cho một thành phần mà trong lab chẳng có chỗ nào
+        # để gửi cảnh báo tới. Lab 8 sẽ bật lại và cho nó gửi vào một webhook cục bộ.
         alertmanager:
           enabled: false
 
@@ -82,9 +82,9 @@ spec:
           adminUser: admin
           adminPassword: admin
           defaultDashboardsTimezone: Asia/Ho_Chi_Minh
-          # No PVC: dashboards come from ConfigMaps (see the sidecar below),
-          # so there is no state worth persisting. Anything you create by
-          # clicking is lost on restart — that is the intended lesson.
+          # Không dùng PVC: dashboard đến từ ConfigMap (xem sidecar bên dưới),
+          # nên không có trạng thái nào đáng lưu. Thứ gì bạn tạo bằng cách bấm
+          # chuột sẽ mất khi restart — đó chính là bài học có chủ ý.
           persistence:
             enabled: false
           resources:
@@ -101,9 +101,9 @@ spec:
           sidecar:
             dashboards:
               enabled: true
-              # Any ConfigMap in any namespace labelled grafana_dashboard: "1"
-              # is picked up and loaded. That is how the Kalapa dashboard gets
-              # in without touching Grafana's API.
+              # Mọi ConfigMap ở bất kỳ namespace nào mang nhãn
+              # grafana_dashboard: "1" đều được nhặt lên và nạp vào. Đó là cách
+              # dashboard Kalapa vào được mà không cần đụng tới API của Grafana.
               label: grafana_dashboard
               searchNamespace: ALL
             datasources:
@@ -111,14 +111,14 @@ spec:
               label: grafana_datasource
               searchNamespace: ALL
           grafana.ini:
-            # Required for the Loki -> Tempo "trace_id" link to open the trace
-            # in a side panel rather than a new query.
+            # Cần có để link "trace_id" từ Loki sang Tempo mở trace trong một
+            # panel bên cạnh, thay vì mở một truy vấn mới.
             feature_toggles:
               enable: traceToMetrics
             users:
               default_theme: dark
 
-        # ---- Exporters ----
+        # ---- Các exporter ----
         nodeExporter:
           enabled: true
         kubeStateMetrics:
@@ -146,9 +146,9 @@ spec:
             limits:
               memory: 256Mi
 
-        # These scrape control-plane components that minikube either does not
-        # expose or runs inside the single node. Left on, they produce
-        # permanently-down targets that train you to ignore red targets.
+        # Những mục này scrape các thành phần control plane mà minikube hoặc
+        # không phơi ra, hoặc chạy gộp trong node duy nhất. Để bật, chúng tạo ra
+        # các target down vĩnh viễn và tập cho bạn thói quen phớt lờ target đỏ.
         kubeControllerManager:
           enabled: false
         kubeScheduler:
@@ -169,9 +169,9 @@ spec:
       limit: 5
       backoff: { duration: 20s, factor: 2, maxDuration: 5m }
   ignoreDifferences:
-    # The admission webhook's CA bundle is injected at runtime by a Job. Argo
-    # would otherwise see it as drift and revert it on every self-heal,
-    # breaking the webhook every few minutes.
+    # CA bundle của admission webhook được một Job tiêm vào lúc chạy. Nếu không
+    # có khối này, Argo sẽ coi đó là drift và hoàn nguyên nó ở mỗi lần self-heal,
+    # làm webhook hỏng theo chu kỳ vài phút một lần.
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration
       jsonPointers:

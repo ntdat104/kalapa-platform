@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/name: keycloak
 spec:
   replicas: 1
-  # Recreate, not RollingUpdate: two Keycloak pods running a schema migration
-  # against the same database at the same time is a corrupted realm.
+  # Recreate chứ không phải RollingUpdate: hai pod Keycloak cùng chạy migration
+  # schema lên cùng một database vào cùng lúc sẽ làm hỏng realm.
   strategy:
     type: Recreate
   selector:
@@ -25,9 +25,9 @@ spec:
       containers:
         - name: keycloak
           image: {{ .Values.image }}
-          # start-dev skips the build/optimise step and disables the hostname
-          # strictness that otherwise rejects plain-HTTP access. Never use it
-          # beyond a lab: it also turns off HTTPS enforcement.
+          # start-dev bỏ qua bước build/tối ưu và tắt chế độ kiểm tra hostname
+          # nghiêm ngặt vốn sẽ từ chối truy cập HTTP thuần. Đừng bao giờ dùng nó
+          # ngoài phạm vi một lab: nó cũng tắt luôn việc bắt buộc HTTPS.
           args:
             - start-dev
             - --import-realm
@@ -51,10 +51,10 @@ spec:
                 secretKeyRef:
                   name: keycloak-db-credentials
                   key: password
-            # The issuer claim in every token is built from this hostname.
-            # If it does not match what the gateway validates against, every
-            # token is rejected with "issuer mismatch" — the first thing that
-            # breaks when you enable auth.
+            # Claim issuer trong mọi token được dựng từ hostname này. Nếu nó
+            # không khớp với giá trị mà gateway dùng để verify thì mọi token đều
+            # bị từ chối với lỗi "issuer mismatch" — thứ hỏng đầu tiên khi bạn
+            # bật xác thực.
             - name: KC_HOSTNAME
               value: {{ .Values.hostname | quote }}
             - name: KC_HOSTNAME_STRICT
@@ -66,8 +66,8 @@ spec:
             - name: KC_METRICS_ENABLED
               value: "true"
             - name: KC_CACHE
-              # local instead of the default distributed Infinispan cache:
-              # single replica, and the clustered cache reserves far more heap.
+              # Dùng local thay cho cache Infinispan phân tán mặc định: chỉ có
+              # một replica, mà cache kiểu cụm thì giữ chỗ nhiều heap hơn hẳn.
               value: local
             - name: JAVA_OPTS_KC_HEAP
               value: "-Xms{{ .Values.jvm.heap }} -Xmx{{ .Values.jvm.heap }}"
@@ -76,16 +76,15 @@ spec:
               containerPort: 8080
             - name: management
               containerPort: 9000
-          # Keycloak's health endpoints live on the management port (9000)
-          # since v25 — probing 8080 returns 404 and the pod never goes ready.
+          # Các endpoint health của Keycloak nằm trên port quản trị (9000) kể từ
+          # v25 — dò port 8080 sẽ trả 404 và pod không bao giờ Ready.
           startupProbe:
             httpGet:
               path: /health/started
               port: management
             periodSeconds: 5
-            # 60 x 5s = 5 minutes. A first start runs the full schema
-            # migration against an empty database and genuinely takes minutes
-            # on a laptop.
+            # 60 x 5s = 5 phút. Lần khởi động đầu chạy toàn bộ migration schema
+            # trên một database rỗng, và trên laptop thì nó mất vài phút thật.
             failureThreshold: 60
           livenessProbe:
             httpGet:

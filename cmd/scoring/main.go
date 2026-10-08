@@ -1,4 +1,4 @@
-// Command scoring runs the credit-scoring consumer and its query API.
+// Command scoring chạy consumer chấm điểm tín dụng và API truy vấn của nó.
 package main
 
 import (
@@ -74,8 +74,8 @@ func run() error {
 	srv := httpx.New(cfg.Server, log, metrics)
 	srv.AddReadinessCheck("postgres", pool.Ping)
 	srv.AddReadinessCheck("kafka", consumer.Ping)
-	// The consumer loop lives and dies with the HTTP listeners, so SIGTERM
-	// drains both and the final offset commit happens inside the grace period.
+	// Vòng lặp consumer sống chết cùng các listener HTTP, nên SIGTERM xả cả hai
+	// và lần commit offset cuối cùng diễn ra trong khoảng ân hạn.
 	srv.Go(func(ctx context.Context) error { return consumer.Run(ctx, svc.Handle) })
 
 	return srv.Run(ctx, svc.Routes(), cfg.Service.Name)

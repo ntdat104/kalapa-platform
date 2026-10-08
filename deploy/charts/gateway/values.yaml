@@ -1,5 +1,6 @@
-# The gateway is the only service with an Ingress and the only one that talks
-# to Keycloak. It has no database, so it declares no Postgres credentials.
+# Gateway là service duy nhất có Ingress và cũng là service duy nhất nói chuyện
+# với Keycloak. Nó không có database nên không khai báo thông tin đăng nhập
+# Postgres nào.
 go-service:
   nameOverride: gateway
   fullnameOverride: gateway
@@ -11,8 +12,8 @@ go-service:
   extraConfigMap: kalapa-gateway-config
   extraConfigKey: gateway.yaml
 
-  # No DB, so no Postgres Secret. Each service mounting only the credentials it
-  # actually needs is the whole point of splitting them per Secret.
+  # Không có DB nên không cần Secret Postgres. Việc mỗi service chỉ mount đúng
+  # thông tin đăng nhập nó thực sự cần chính là lý do tách Secret ra từng cái.
   envFromSecrets: []
 
   ingress:
@@ -20,12 +21,12 @@ go-service:
     className: nginx
     host: api.kalapa.local
     annotations:
-      # The upstream Go service has its own 10s client timeout; letting NGINX
-      # wait longer only produces connections that outlive the request.
+      # Service Go phía sau đã có timeout 10 giây ở phía client; để NGINX chờ
+      # lâu hơn chỉ tạo ra những kết nối sống lâu hơn cả request.
       nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
       nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
-      # Bound the request body at the edge so an oversized upload is rejected
-      # before it ever reaches a 96Mi pod.
+      # Giới hạn kích thước thân request ngay ở biên, để một lần upload quá khổ
+      # bị từ chối trước khi nó kịp chạm tới một pod chỉ có 96Mi.
       nginx.ingress.kubernetes.io/proxy-body-size: "2m"
     paths:
       - path: /api
@@ -42,7 +43,7 @@ go-service:
 
   networkPolicy:
     enabled: false
-    # Only the Ingress controller may reach the gateway's HTTP port.
+    # Chỉ Ingress controller được phép tới port HTTP của gateway.
     allowFromNamespaces:
       - ingress-nginx
     allowToNamespaces:

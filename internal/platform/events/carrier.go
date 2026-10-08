@@ -2,10 +2,10 @@ package events
 
 import "github.com/twmb/franz-go/pkg/kgo"
 
-// RecordCarrier adapts a Kafka record's headers to the OTel TextMapCarrier
-// interface, which is what `otel.GetTextMapPropagator().Inject/Extract`
-// expects. With it, a record carries `traceparent` the same way an HTTP
-// request carries it in a header.
+// RecordCarrier biến header của một bản ghi Kafka thành giao diện
+// TextMapCarrier của OTel — thứ mà `otel.GetTextMapPropagator().Inject/Extract`
+// cần. Nhờ nó, một bản ghi mang theo `traceparent` y như cách một request HTTP
+// mang nó trong header.
 type RecordCarrier struct{ Record *kgo.Record }
 
 func (c *RecordCarrier) Get(key string) string {
@@ -17,8 +17,8 @@ func (c *RecordCarrier) Get(key string) string {
 	return ""
 }
 
-// Set replaces an existing header rather than appending, so a record that is
-// re-produced (a retry, a replay) does not accumulate duplicate traceparents.
+// Set GHI ĐÈ header đã có thay vì nối thêm, để một bản ghi được phát lại (do
+// retry hoặc replay) không tích luỹ nhiều traceparent trùng nhau.
 func (c *RecordCarrier) Set(key, value string) {
 	for i, h := range c.Record.Headers {
 		if h.Key == key {

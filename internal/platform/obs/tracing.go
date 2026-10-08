@@ -1,7 +1,7 @@
-// Package obs wires the two telemetry signals a Go service emits itself:
-// OTLP traces pushed to the collector, and Prometheus metrics pulled from the
-// admin port. Logs are the third signal and leave via stdout (see package
-// logging) because that is the only path that survives a crashing process.
+// Package obs nối hai tín hiệu telemetry mà bản thân service Go tự phát ra:
+// trace OTLP đẩy sang collector, và metric Prometheus được kéo từ port quản
+// trị. Log là tín hiệu thứ ba và đi ra qua stdout (xem package logging), vì đó
+// là đường duy nhất còn sống sót khi process đang chết.
 package obs
 
 import (
@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-// TracingOptions mirrors the `tracing` block of the mounted config.
+// TracingOptions tương ứng khối `tracing` trong file cấu hình được mount.
 type TracingOptions struct {
 	Enabled     bool
 	Endpoint    string // host:port of the collector's OTLP/gRPC receiver
@@ -30,15 +30,14 @@ type TracingOptions struct {
 	SampleRatio float64
 }
 
-// InitTracing returns a tracer and a shutdown func. When tracing is disabled
-// (or no endpoint is configured) it hands back a no-op tracer so call sites
-// never need a nil check — the service stays runnable with the whole
-// observability namespace deleted, which is exactly the failure you want to be
-// able to simulate in a lab.
+// InitTracing trả về một tracer và một hàm tắt. Khi tracing bị tắt (hoặc chưa
+// cấu hình endpoint), nó trả về tracer no-op để không chỗ gọi nào phải kiểm tra
+// nil — service vẫn chạy được ngay cả khi xoá sạch namespace observability, mà
+// đó đúng là tình huống hỏng bạn muốn mô phỏng được trong lab.
 func InitTracing(ctx context.Context, o TracingOptions) (trace.Tracer, func(context.Context) error, error) {
-	// The W3C propagator must be installed even when tracing is off: the
-	// gateway still forwards whatever traceparent it received, so a disabled
-	// hop becomes a gap in the trace rather than two disconnected traces.
+	// Propagator W3C phải được cài kể cả khi tracing tắt: gateway vẫn chuyển
+	// tiếp traceparent mà nó nhận được, nên một chặng bị tắt trace sẽ thành một
+	// khoảng trống trong trace chứ không thành hai trace rời rạc.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{}, propagation.Baggage{},
 	))
@@ -52,26 +51,26 @@ func InitTracing(ctx context.Context, o TracingOptions) (trace.Tracer, func(cont
 
 	exporter, err := otlptracegrpc.New(dialCtx,
 		otlptracegrpc.WithEndpoint(o.Endpoint),
-		// Plaintext is correct here: the hop is pod -> collector inside the
-		// cluster. Terminating TLS would be the collector's job, not ours.
+		// Dùng plaintext ở đây là đúng: chặng này là pod -> collector bên trong
+		// cluster. Việc kết thúc TLS là nhiệm vụ của collector, không phải của ta.
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("otlp exporter: %w", err)
 	}
 
-	// sdkresource.Merge refuses to combine resources whose schema URLs differ,
-	// and sdkresource.Default() carries whichever semconv version the SDK was
-	// built against. So the semconv import below must track the SDK, not be
-	// pinned independently — otherwise the process dies at startup with
-	// "conflicting Schema URL", which no test that skips tracing will catch.
+	// sdkresource.Merge từ chối gộp hai resource có schema URL khác nhau, và
+	// sdkresource.Default() mang theo đúng phiên bản semconv mà SDK được build
+	// cùng. Nên import semconv bên dưới phải bám theo SDK chứ không được ghim
+	// độc lập — nếu không, process chết ngay lúc khởi động với lỗi
+	// "conflicting Schema URL", mà không test nào bỏ qua tracing bắt được.
 	res, err := sdkresource.Merge(sdkresource.Default(), sdkresource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(o.ServiceName),
 		semconv.ServiceVersion(o.Version),
 		semconv.DeploymentEnvironmentNameKey.String(o.Environment),
-		// k8s.* attributes come from the Downward API env vars the chart sets,
-		// which is what lets Tempo's service graph line up with Prometheus.
+		// Các thuộc tính k8s.* đến từ biến môi trường Downward API do chart đặt;
+		// chính chúng làm service graph của Tempo khớp được với Prometheus.
 		attribute.String("k8s.namespace.name", envOr("K8S_NAMESPACE", "")),
 		attribute.String("k8s.pod.name", envOr("K8S_POD_NAME", "")),
 		attribute.String("k8s.node.name", envOr("K8S_NODE_NAME", "")),
@@ -86,8 +85,8 @@ func InitTracing(ctx context.Context, o TracingOptions) (trace.Tracer, func(cont
 			sdktrace.WithBatchTimeout(2*time.Second),
 		),
 		sdktrace.WithResource(res),
-		// ParentBased keeps a sampling decision consistent across the whole
-		// request; sampling per hop would produce half-traces.
+		// ParentBased giữ quyết định lấy mẫu nhất quán cho cả request; lấy mẫu
+		// riêng ở từng chặng sẽ sinh ra nửa trace.
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(o.SampleRatio))),
 	)
 	otel.SetTracerProvider(tp)

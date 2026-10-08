@@ -22,9 +22,9 @@ kind: Ingress
 metadata:
   name: keycloak
   annotations:
-    # Keycloak builds absolute URLs (redirects, the JWKS endpoint) from the
-    # forwarded headers. Without them it emits http://keycloak/... which no
-    # browser can follow.
+    # Keycloak dựng các URL tuyệt đối (link chuyển hướng, endpoint JWKS) từ các
+    # header được chuyển tiếp. Thiếu chúng, nó sinh ra http://keycloak/... mà
+    # không trình duyệt nào theo được.
     nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
 spec:
   ingressClassName: {{ .Values.ingress.className }}

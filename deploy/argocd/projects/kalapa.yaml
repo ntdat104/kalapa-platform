@@ -6,14 +6,14 @@ metadata:
 spec:
   description: The Kalapa Go services
   sourceRepos:
-    # One repo only. An Application in this project cannot be pointed at an
-    # attacker-controlled chart.
+    # Chỉ một repo duy nhất. Một Application trong project này không thể bị trỏ
+    # tới một chart do kẻ tấn công kiểm soát.
     - __GIT_REPO_URL__
   destinations:
     - namespace: kalapa
       server: https://kubernetes.default.svc
-  # Empty whitelist = no cluster-scoped resources at all. A service chart that
-  # grows a ClusterRole will be refused rather than silently granted.
+  # Danh sách rỗng = không cho phép bất kỳ tài nguyên phạm vi cluster nào. Một
+  # chart service mọc thêm ClusterRole sẽ bị TỪ CHỐI thay vì được âm thầm cấp.
   clusterResourceWhitelist: []
   namespaceResourceWhitelist:
     - group: ''

@@ -1,9 +1,9 @@
-# Loki in SingleBinary mode: all microservices (distributor, ingester, querier,
-# compactor) in one process.
+# Loki chạy chế độ SingleBinary: mọi thành phần (distributor, ingester, querier,
+# compactor) gộp trong một process.
 #
-# The chart's default is `distributed` / SimpleScalable, which is three
-# StatefulSets plus MinIO — around 1.5 GB. SingleBinary with filesystem
-# storage is ~250 MB and behaves identically for a single-tenant lab.
+# Mặc định của chart là `distributed` / SimpleScalable, tức ba StatefulSet cộng
+# MinIO — khoảng 1,5 GB. SingleBinary dùng lưu trữ filesystem chỉ tốn khoảng
+# 250 MB và hành xử y hệt với một lab chỉ có một tenant.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -22,9 +22,8 @@ spec:
         deploymentMode: SingleBinary
 
         loki:
-          # Multi-tenancy off: with it on, every read and write needs an
-          # X-Scope-OrgID header and a missing header returns a confusing
-          # "no org id" error.
+          # Tắt đa tenant: bật lên thì mọi lần đọc và ghi đều cần header
+          # X-Scope-OrgID, và thiếu header sẽ trả về lỗi "no org id" rất khó hiểu.
           auth_enabled: false
           commonConfig:
             replication_factor: 1
@@ -32,9 +31,9 @@ spec:
             type: filesystem
           schemaConfig:
             configs:
-              # TSDB + v13 is the current schema. The chart refuses to install
-              # without an explicit schemaConfig, because silently picking one
-              # would make a future upgrade unmigratable.
+              # TSDB + v13 là schema hiện hành. Chart từ chối cài nếu không khai
+              # báo schemaConfig tường minh, vì tự chọn giúp sẽ khiến một lần
+              # nâng cấp sau này không thể migrate được.
               - from: "2024-04-01"
                 store: tsdb
                 object_store: filesystem
@@ -44,17 +43,17 @@ spec:
                   period: 24h
           limits_config:
             retention_period: 72h
-            # Logs arriving with a timestamp older than this are dropped. A
-            # pod with a skewed clock is the usual cause of "my logs are not
-            # in Loki" with no error anywhere.
+            # Log tới nơi với dấu thời gian cũ hơn mức này sẽ bị vứt. Một pod bị
+            # lệch đồng hồ là nguyên nhân thường gặp của tình trạng "log của tôi
+            # không vào Loki" mà chẳng thấy lỗi ở đâu cả.
             reject_old_samples: true
             reject_old_samples_max_age: 168h
-            # A single busy pod can otherwise exhaust the ingestion budget for
-            # the whole cluster.
+            # Không có giới hạn này thì một pod bận rộn đủ sức ngốn hết ngân sách
+            # thu nhận của cả cluster.
             ingestion_rate_mb: 8
             ingestion_burst_size_mb: 16
-            # Guards against a high-cardinality label (a trace id promoted to a
-            # label by mistake) exploding the index.
+            # Chặn trường hợp một label có cardinality cao (ví dụ lỡ tay nâng
+            # trace id thành label) làm nổ index.
             max_label_names_per_series: 20
           compactor:
             working_directory: /var/loki/compactor
@@ -73,9 +72,9 @@ spec:
             enabled: true
             size: 3Gi
 
-        # Every component below belongs to the scalable deployment modes.
-        # Leaving any of them enabled alongside SingleBinary produces a
-        # half-wired cluster that accepts writes and returns no results.
+        # Mọi thành phần bên dưới thuộc về các chế độ triển khai mở rộng. Để sót
+        # bất kỳ cái nào đang bật cùng với SingleBinary sẽ tạo ra một cluster nối
+        # dở dang: nhận được dữ liệu ghi vào nhưng truy vấn không trả về gì.
         backend: { replicas: 0 }
         read: { replicas: 0 }
         write: { replicas: 0 }
@@ -89,14 +88,14 @@ spec:
         bloomCompactor: { replicas: 0 }
         bloomGateway: { replicas: 0 }
 
-        # MinIO would be the object store for a scalable deployment; the
-        # filesystem store makes it dead weight.
+        # MinIO là object store cho kiểu triển khai mở rộng; khi đã dùng lưu trữ
+        # filesystem thì nó chỉ là gánh nặng thừa.
         minio:
           enabled: false
 
-        # The gateway is an nginx in front of Loki. Keeping it means one
-        # stable address (`loki-gateway`) whether Loki is single-binary or
-        # scaled out later, which is worth ~30Mi.
+        # gateway là một nginx đứng trước Loki. Giữ nó nghĩa là luôn có một địa
+        # chỉ ổn định (`loki-gateway`) dù Loki đang chạy single-binary hay sau này
+        # được mở rộng — đáng giá khoảng 30Mi.
         gateway:
           enabled: true
           resources:

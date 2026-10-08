@@ -1,15 +1,15 @@
-# Grafana datasources, provisioned through the sidecar that watches for
-# ConfigMaps labelled grafana_datasource: "1".
+# Các datasource của Grafana, được nạp qua sidecar vốn theo dõi những ConfigMap
+# mang nhãn grafana_datasource: "1".
 #
-# The interesting content is the cross-links. Three signals are only useful as
-# a system when you can get from one to the next:
+# Phần đáng giá nằm ở các liên kết chéo. Ba tín hiệu chỉ trở nên hữu dụng như
+# một hệ thống khi bạn đi được từ cái này sang cái kia:
 #
-#   metric spike  --(exemplar)-->  trace
-#   trace span    --(tracesToLogs)-->  that pod's logs at that moment
-#   log line      --(derivedField)-->  the trace it belongs to
+#   đỉnh metric  --(exemplar)-->      trace
+#   span trace   --(tracesToLogs)-->  log của đúng pod đó tại đúng thời điểm đó
+#   dòng log     --(derivedField)-->  trace mà nó thuộc về
 #
-# Each of those is one block below. Leave them out and you have three separate
-# tools that happen to be installed in the same cluster.
+# Mỗi liên kết là một khối bên dưới. Bỏ chúng đi thì bạn chỉ có ba công cụ rời
+# rạc tình cờ được cài chung một cluster.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -29,9 +29,9 @@ data:
         jsonData:
           maxLines: 1000
           derivedFields:
-            # Scans each log line for a trace_id field and renders it as a
-            # clickable link into Tempo. Our logs are JSON, so the regex
-            # targets the quoted JSON value.
+            # Quét từng dòng log tìm trường trace_id rồi hiển thị nó thành một
+            # link bấm được sang Tempo. Log của ta là JSON nên biểu thức chính quy
+            # nhắm vào giá trị JSON đã bọc nháy.
             - name: TraceID
               datasourceUid: tempo
               matcherRegex: '"trace_id":"(\w+)"'
@@ -42,17 +42,16 @@ data:
         type: tempo
         uid: tempo
         access: proxy
-        # 3200, not 3100. Tempo's HTTP query API and 3100 (which is
-        # Loki's port) are easy to transpose; the symptom is a Tempo
-        # datasource that saves fine and returns "no data" for every
-        # search. Confirm with:
+        # 3200, không phải 3100. API truy vấn HTTP của Tempo và cổng 3100 (vốn
+        # là của Loki) rất dễ bị nhầm lẫn; triệu chứng là một datasource Tempo lưu
+        # được bình thường nhưng mọi lần tìm đều trả về "no data". Kiểm tra bằng:
         #   kubectl -n observability get svc tempo -o json | jq '.spec.ports'
         url: http://tempo.observability:3200
         jsonData:
           tracesToLogsV2:
             datasourceUid: loki
-            # Narrow the log query to the same pod and a window around the
-            # span, otherwise the link lands you in the whole cluster's logs.
+            # Thu hẹp truy vấn log về đúng pod đó và một cửa sổ thời gian quanh
+            # span, nếu không cú bấm sẽ ném bạn vào log của cả cluster.
             spanStartTimeShift: '-5m'
             spanEndTimeShift: '5m'
             filterByTraceID: true
@@ -70,9 +69,9 @@ data:
               - name: 'Request rate'
                 query: 'sum(rate(http_server_requests_total{$$__tags}[5m]))'
           serviceMap:
-            # Reads the span-derived metrics Tempo's generator remote-writes
-            # into Prometheus. Point this at the wrong datasource and the
-            # service map renders empty with no error.
+            # Đọc các metric suy ra từ span mà generator của Tempo remote-write
+            # sang Prometheus. Trỏ nhầm datasource thì service map hiện ra trống
+            # trơn mà không có lỗi nào.
             datasourceUid: prometheus
           nodeGraph:
             enabled: true

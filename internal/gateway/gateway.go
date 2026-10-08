@@ -1,11 +1,11 @@
-// Package gateway is the only service the Ingress routes to. It plays the role
-// YAS gives to storefront-bff: terminate the public contract, verify the token
-// once, and fan out to internal services over cluster DNS.
+// Package gateway là service duy nhất mà Ingress định tuyến tới. Nó đóng vai
+// trò mà YAS giao cho storefront-bff: kết thúc hợp đồng công khai, verify token
+// một lần, rồi toả ra gọi các service nội bộ qua DNS của cluster.
 //
-// Everything it does could be done by the Ingress controller or a service
-// mesh. It exists as a Go process so the trace has a visible first hop and so
-// the aggregate endpoint can demonstrate a fan-out span — two parallel
-// children under one parent is the shape you want to recognise in Tempo.
+// Mọi việc nó làm đều có thể do Ingress controller hoặc một service mesh đảm
+// nhiệm. Nó tồn tại dưới dạng một process Go để trace có một chặng đầu nhìn
+// thấy được, và để endpoint tổng hợp minh hoạ được span kiểu toả nhánh — hai
+// span con song song dưới một span cha là hình dạng bạn cần nhận ra trong Tempo.
 package gateway
 
 import (
@@ -36,9 +36,9 @@ type Service struct {
 	once   sync.Once
 }
 
-// httpClient is created lazily so the zero-value Service is still usable in
-// tests. otelhttp.NewTransport is what injects `traceparent` on the way out —
-// without it the downstream service starts a brand-new trace.
+// httpClient được tạo lười để Service ở giá trị zero vẫn dùng được trong test.
+// otelhttp.NewTransport chính là thứ chèn `traceparent` vào request đi ra —
+// thiếu nó, service phía dưới sẽ mở một trace hoàn toàn mới.
 func (s *Service) httpClient() *http.Client {
 	s.once.Do(func() {
 		s.client = &http.Client{
@@ -56,8 +56,8 @@ func (s *Service) httpClient() *http.Client {
 func (s *Service) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Public contract: /api/** . The /api prefix is stripped before the
-	// request is forwarded, the same rewrite YAS expresses as
+	// Hợp đồng công khai: /api/** . Tiền tố /api bị cắt bỏ trước khi chuyển
+	// tiếp, đúng phép viết lại mà YAS diễn đạt bằng
 	// `RewritePath=/api/(?<segment>.*), /$\{segment}`.
 	mux.Handle("POST /api/kyc/applications", s.protect(s.proxy(func() string { return s.KYCURL })))
 	mux.Handle("GET /api/kyc/applications", s.protect(s.proxy(func() string { return s.KYCURL })))
@@ -65,7 +65,7 @@ func (s *Service) Routes() *http.ServeMux {
 	mux.Handle("GET /api/scoring/scores", s.protect(s.proxy(func() string { return s.ScoringURL })))
 	mux.Handle("GET /api/scoring/scores/{applicationId}", s.protect(s.proxy(func() string { return s.ScoringURL })))
 
-	// The aggregate: one client call, two upstream calls in parallel.
+	// Endpoint tổng hợp: một lời gọi từ client, hai lời gọi upstream song song.
 	mux.Handle("GET /api/applications/{id}", s.protect(http.HandlerFunc(s.aggregate)))
 
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +74,7 @@ func (s *Service) Routes() *http.ServeMux {
 	return mux
 }
 
-// protect applies JWT verification when auth is enabled.
+// protect áp dụng việc verify JWT khi xác thực được bật.
 func (s *Service) protect(next http.Handler) http.Handler {
 	if s.Auth == nil || !s.Auth.Enabled {
 		return next
@@ -82,9 +82,9 @@ func (s *Service) protect(next http.Handler) http.Handler {
 	return s.Auth.Middleware(next)
 }
 
-// proxy forwards the request to `base`, stripping the /api prefix. target is a
-// func so the URL is read at request time, which is what makes a Reloader-
-// triggered config change take effect without a code path that caches it.
+// proxy chuyển tiếp request tới `base` và cắt bỏ tiền tố /api. target là một
+// hàm để URL được đọc tại thời điểm xử lý request — nhờ vậy một thay đổi cấu
+// hình do Reloader kích hoạt có hiệu lực ngay, không bị một chỗ nào đó cache lại.
 func (s *Service) proxy(target func() string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		base := strings.TrimSuffix(target(), "/")
@@ -123,8 +123,8 @@ func (s *Service) proxy(target func() string) http.Handler {
 			}
 		}
 		w.WriteHeader(resp.StatusCode)
-		// Bounded copy: an upstream that streams forever must not be able to
-		// pin the gateway's memory.
+		// Sao chép có giới hạn: một upstream phát dữ liệu vô tận không được phép
+		// chiếm giữ bộ nhớ của gateway.
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, 4<<20))
 	})
 }
@@ -135,9 +135,9 @@ type aggregateResponse struct {
 	Pending     bool            `json:"scoring_pending"`
 }
 
-// aggregate fetches the application and its score concurrently. In Tempo this
-// renders as two sibling spans overlapping in time under the gateway span —
-// if they appear sequentially, the concurrency is broken.
+// aggregate lấy hồ sơ và điểm của nó đồng thời. Trong Tempo, việc đó hiện ra
+// thành hai span anh em chồng lấn thời gian dưới span của gateway — nếu chúng
+// hiện ra nối tiếp nhau thì tính song song đã hỏng.
 func (s *Service) aggregate(w http.ResponseWriter, r *http.Request) {
 	ctx, span := s.Tracer.Start(r.Context(), "gateway.aggregate")
 	defer span.End()
@@ -172,9 +172,9 @@ func (s *Service) aggregate(w http.ResponseWriter, r *http.Request) {
 	if scoStatus == http.StatusOK {
 		out.Score = scoBody
 	} else {
-		// Not an error: the event may still be in flight. Surfacing it as a
-		// flag rather than a 404 is what makes eventual consistency usable
-		// by a caller.
+		// Không phải lỗi: sự kiện có thể vẫn đang trên đường. Phơi nó ra dưới
+		// dạng một cờ thay vì trả 404 chính là điều làm cho tính nhất quán cuối
+		// cùng dùng được từ phía người gọi.
 		out.Pending = true
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)

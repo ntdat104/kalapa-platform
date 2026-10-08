@@ -1,11 +1,11 @@
-# Grafana picks this up via the dashboard sidecar, which watches for the
-# grafana_dashboard label in any namespace. Storing dashboards as code is the
-# difference between "the dashboard survives a Grafana restart" and not.
+# Grafana nhặt file này lên qua sidecar dashboard, vốn theo dõi nhãn
+# grafana_dashboard ở mọi namespace. Lưu dashboard dưới dạng code chính là khác
+# biệt giữa "dashboard sống sót qua một lần restart Grafana" và không.
 #
-# The panels are grouped to answer three questions in order:
-#   1. Is the service serving? (RED: rate, errors, duration)
-#   2. Is it about to die?     (memory vs limit, CPU throttling, GC)
-#   3. Is the async path keeping up? (produced vs consumed)
+# Các panel được nhóm lại để trả lời ba câu hỏi, theo thứ tự:
+#   1. Service có đang phục vụ không?  (RED: tần suất, lỗi, thời lượng)
+#   2. Nó sắp chết chưa?               (bộ nhớ so với limit, CPU bị throttle, GC)
+#   3. Đường bất đồng bộ có theo kịp không? (số sự kiện phát ra so với tiêu thụ)
 apiVersion: v1
 kind: ConfigMap
 metadata:

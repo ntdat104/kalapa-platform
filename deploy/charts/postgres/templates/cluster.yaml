@@ -1,13 +1,13 @@
 {{/*
-CloudNativePG replaces the StatefulSet-plus-scripts pattern with an operator
-that owns failover, backup and the connection endpoints.
+CloudNativePG thay thế lối làm StatefulSet-cộng-script bằng một operator nắm
+luôn việc failover, sao lưu và các điểm kết nối.
 
-What the operator creates for a Cluster named `kalapa-db`:
-  kalapa-db-rw   -> always the current primary (reads and writes)
-  kalapa-db-ro   -> replicas only; empty with instances: 1
-  kalapa-db-r    -> any instance
-Applications address -rw. On failover the operator repoints that Service, so
-no application config changes and no restart is needed.
+Operator tạo ra những gì cho một Cluster tên `kalapa-db`:
+  kalapa-db-rw   -> luôn là primary hiện tại (đọc và ghi)
+  kalapa-db-ro   -> chỉ các replica; rỗng khi instances: 1
+  kalapa-db-r    -> instance bất kỳ
+Ứng dụng trỏ vào -rw. Khi failover, operator chuyển hướng Service đó, nên không
+cấu hình ứng dụng nào phải đổi và không cần restart gì.
 */}}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
@@ -16,40 +16,39 @@ metadata:
   labels:
     app.kubernetes.io/part-of: kalapa
 spec:
-  # One instance on a single-node lab. Three is the production answer, and
-  # the only change needed is this number — the operator handles the rest.
+  # Một instance trên lab một node. Ở production câu trả lời là ba, và thứ duy
+  # nhất phải đổi là con số này — operator lo phần còn lại.
   instances: {{ .Values.instances }}
   imageName: {{ .Values.image }}
 
   postgresql:
     parameters:
-      # Sized for a 256Mi container, not a server. shared_buffers at 25% of
-      # the memory limit is the usual starting point.
+      # Chỉnh cho một container 256Mi chứ không phải một máy chủ. shared_buffers
+      # bằng 25% giới hạn bộ nhớ là điểm khởi đầu thông dụng.
       shared_buffers: {{ .Values.parameters.sharedBuffers | quote }}
       max_connections: {{ .Values.parameters.maxConnections | quote }}
-      # Logical replication is enabled so the CDC lab (Debezium) can be added
-      # later without a restart — changing wal_level requires one.
+      # Bật sẵn logical replication để sau này thêm được lab CDC (Debezium) mà
+      # không phải restart — đổi wal_level thì buộc phải restart.
       wal_level: logical
       max_wal_senders: "10"
       max_replication_slots: "10"
-      # Log any statement slower than a second; this is what populates the
-      # "slow query" panel without needing pg_stat_statements.
+      # Ghi log mọi câu lệnh chậm hơn một giây; chính nó làm đầy panel "truy vấn
+      # chậm" mà không cần tới pg_stat_statements.
       log_min_duration_statement: "1000"
 
   bootstrap:
     initdb:
       database: {{ .Values.database }}
       owner: {{ .Values.owner }}
-      # The operator generates a password unless pointed at a Secret. We point
-      # it at the same Secret the application pods read, so the two cannot
-      # disagree — a mismatch here produces an authentication failure that
-      # looks exactly like a networking problem.
+      # Operator sẽ tự sinh mật khẩu nếu không được trỏ tới một Secret. Ta trỏ
+      # nó vào đúng Secret mà các pod ứng dụng đọc, nhờ vậy hai bên không thể
+      # lệch nhau — lệch ở đây tạo ra lỗi xác thực trông y hệt một sự cố mạng.
       secret:
         name: {{ .Values.credentialsSecret }}
       postInitApplicationSQL:
-        # Both services share one database and are separated by table, not by
-        # schema. A real system would give each service its own database; the
-        # single-database shortcut here saves ~120Mi and one more Cluster.
+        # Hai service dùng chung một database và tách nhau theo bảng chứ không
+        # theo schema. Hệ thống thật thì nên mỗi service một database; lối tắt
+        # dùng chung một database ở đây tiết kiệm khoảng 120Mi và một Cluster nữa.
         - CREATE EXTENSION IF NOT EXISTS pg_stat_statements
 
   storage:
@@ -65,13 +64,13 @@ spec:
     limits:
       memory: {{ .Values.resources.limits.memory }}
 
-  # Exports pg_stat_* as Prometheus metrics on port 9187. The operator also
-  # ships a PodMonitor when enabled below.
+  # Xuất pg_stat_* thành metric Prometheus trên port 9187. Operator cũng tạo kèm
+  # một PodMonitor khi bật tuỳ chọn bên dưới.
   monitoring:
     enablePodMonitor: {{ .Values.monitoring.enabled }}
 
   affinity:
-    # Irrelevant on one node, correct everywhere else: never schedule two
-    # instances of the same cluster onto the same node.
+    # Vô nghĩa trên một node, nhưng đúng ở mọi nơi khác: không bao giờ xếp hai
+    # instance của cùng một cluster lên cùng một node.
     enablePodAntiAffinity: true
     topologyKey: kubernetes.io/hostname

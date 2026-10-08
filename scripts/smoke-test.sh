@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# End-to-end proof that the whole chain works:
+# Bằng chứng đầu-cuối rằng cả chuỗi hoạt động:
 #
 #   curl -> ingress-nginx -> gateway -> kyc -> Postgres
 #                                        \-> Kafka -> scoring -> Postgres
-#                                                        \-> gateway aggregate
+#                                                        \-> endpoint tổng hợp
 #
-# and that the telemetry for that request landed in all three backends.
+# và telemetry của chính request đó đã về đủ cả ba nơi lưu.
 source "$(dirname "$0")/lib.sh"
 
 API="${API:-http://api.kalapa.local}"
@@ -30,8 +30,8 @@ curl -fsS "$API/api/kyc/applications/$app_id" >/dev/null || die "read-back faile
 ok "persisted"
 
 info "4/6  Waiting for scoring (kyc -> Kafka -> scoring -> Postgres)"
-# This is the async hop. If it times out, the event path is broken: check the
-# kyc logs for a publish error, then `kubectl -n kalapa logs deploy/scoring`.
+# Đây là chặng bất đồng bộ. Nếu nó hết giờ chờ thì đường đi của sự kiện đã hỏng:
+# xem log của kyc tìm lỗi publish, rồi `kubectl -n kalapa logs deploy/scoring`.
 deadline=$(( $(date +%s) + 90 ))
 score=""
 while [ "$(date +%s)" -lt "$deadline" ]; do

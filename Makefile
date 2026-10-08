@@ -1,7 +1,7 @@
-# Kalapa platform — Kubernetes / GitOps lab
+# Kalapa platform — lab Kubernetes / GitOps
 #
-# Normal path:   make up   ->  make hosts  ->  make smoke
-# When stuck:    make status   then   make logs SVC=kyc
+# Đường đi bình thường:  make up   ->  make hosts  ->  make smoke
+# Khi bế tắc:            make status   rồi   make logs SVC=kyc
 
 SHELL := /bin/bash
 CLUSTER ?= kalapa
@@ -12,7 +12,7 @@ export CLUSTER_NAME := $(CLUSTER)
 
 .DEFAULT_GOAL := help
 
-## ---------------------------------------------------------------- cluster ---
+## --------------------------------------------------------------- cluster ---
 
 .PHONY: cluster
 cluster: ## Start the minikube cluster and its addons
@@ -39,7 +39,7 @@ up: cluster bootstrap ## cluster + bootstrap in one go
 down: ## Delete the cluster and all its data
 	@./scripts/teardown.sh
 
-## ----------------------------------------------------------------- verify ---
+## -------------------------------------------------------------- kiểm tra ---
 
 .PHONY: smoke
 smoke: ## End-to-end test through the Ingress, including telemetry
@@ -62,7 +62,7 @@ logs: ## Tail a service: make logs SVC=kyc
 load: ## Generate traffic: make load DURATION=300 RPS=10
 	@./scripts/load.sh $(or $(DURATION),120) $(or $(RPS),5)
 
-## -------------------------------------------------------------------- dev ---
+## ------------------------------------------------------------ phát triển ---
 
 .PHONY: test
 test: ## Unit tests with the race detector
@@ -97,7 +97,7 @@ build: ## Build all three images straight into the cluster's Docker daemon
 	done
 	@echo "  Images live in the cluster's daemon; pullPolicy IfNotPresent finds them."
 
-## --------------------------------------------------------------- consoles ---
+## -------------------------------------------------------------- giao diện ---
 
 .PHONY: argocd-password
 argocd-password: ## Print the Argo CD admin password

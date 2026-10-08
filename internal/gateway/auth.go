@@ -17,13 +17,13 @@ import (
 	"github.com/kalapa-lab/kalapa-platform/internal/platform/httpx"
 )
 
-// Authenticator verifies Keycloak-issued RS256 access tokens against the
-// realm's JWKS.
+// Authenticator verify các access token RS256 do Keycloak phát, dựa trên JWKS
+// của realm.
 //
-// It is written against the standard library on purpose. An OIDC library would
-// be three lines, but then the three things that actually break in a cluster —
-// the issuer URL differing between browser and pod, key rotation, and clock
-// skew — stay invisible. All three are handled explicitly below.
+// Nó được viết bằng thư viện chuẩn một cách có chủ ý. Dùng thư viện OIDC thì
+// chỉ mất ba dòng, nhưng khi đó ba thứ thực sự hay hỏng trong cluster — URL
+// issuer khác nhau giữa trình duyệt và pod, việc xoay khoá, và lệch đồng hồ —
+// sẽ bị giấu đi. Cả ba đều được xử lý tường minh bên dưới.
 type Authenticator struct {
 	Enabled   bool
 	IssuerURL string // what the token's `iss` claim must equal
@@ -66,10 +66,10 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			httpx.WriteError(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
-		// Hand the subject downstream so the KYC service can attribute the
-		// application without re-verifying the token. Internal services trust
-		// this header precisely because a NetworkPolicy makes the gateway the
-		// only pod allowed to reach them.
+		// Chuyển subject xuống dưới để service KYC gán được hồ sơ cho đúng
+		// người mà không phải verify lại token. Các service nội bộ tin header
+		// này chính vì NetworkPolicy khiến gateway là pod duy nhất được phép
+		// gọi tới chúng.
 		r.Header.Set("X-Kalapa-Subject", claims.Subject)
 		next.ServeHTTP(w, r)
 	})
@@ -100,8 +100,8 @@ func (a *Authenticator) Verify(ctx context.Context, token string) (*Claims, erro
 	if err := json.Unmarshal(headerJSON, &header); err != nil {
 		return nil, fmt.Errorf("header json: %w", err)
 	}
-	// Pinning the algorithm closes the `alg: none` and HS256-key-confusion
-	// families of attack in one line.
+	// Ghim thuật toán đóng cả hai họ tấn công `alg: none` và nhầm lẫn khoá
+	// HS256 chỉ bằng một dòng.
 	if header.Alg != "RS256" {
 		return nil, fmt.Errorf("unexpected alg %q", header.Alg)
 	}
@@ -132,16 +132,16 @@ func (a *Authenticator) Verify(ctx context.Context, token string) (*Claims, erro
 	}
 
 	now := time.Now()
-	// 60s leeway: pods and the host clock drift, and a strict comparison makes
-	// tokens fail intermittently in a way that looks like a networking bug.
+	// Dung sai 60 giây: đồng hồ của pod và của host lệch nhau, và so sánh quá
+	// nghiêm làm token hỏng ngắt quãng theo kiểu trông hệt như lỗi mạng.
 	if claims.Expiry > 0 && now.After(time.Unix(claims.Expiry, 0).Add(60*time.Second)) {
 		return nil, fmt.Errorf("token expired")
 	}
 	if a.IssuerURL != "" && strings.TrimSuffix(claims.Issuer, "/") != a.IssuerURL {
-		// This is the error you will hit first. Keycloak stamps `iss` with the
-		// URL the *browser* used; a pod validating against the in-cluster
-		// Service name will see a mismatch. Fix it by configuring Keycloak's
-		// hostname, not by relaxing this check.
+		// Đây là lỗi bạn sẽ gặp đầu tiên. Keycloak đóng dấu `iss` bằng URL mà
+		// TRÌNH DUYỆT đã dùng; một pod verify theo tên Service nội bộ sẽ thấy
+		// lệch. Hãy sửa bằng cách cấu hình hostname của Keycloak cho đúng,
+		// không phải bằng cách nới lỏng phép kiểm tra này.
 		return nil, fmt.Errorf("issuer mismatch: token=%q expected=%q", claims.Issuer, a.IssuerURL)
 	}
 	if a.Audience != "" && !claims.hasAudience(a.Audience) {
@@ -164,9 +164,9 @@ func (c Claims) hasAudience(want string) bool {
 	return false
 }
 
-// keyFor returns the signing key, refreshing the JWKS at most once per cache
-// TTL — and immediately on an unknown kid, which is how key rotation is
-// supposed to be handled.
+// keyFor trả về khoá ký, làm mới JWKS nhiều nhất một lần trong mỗi chu kỳ
+// cache — và làm mới NGAY khi gặp một kid lạ, đó mới là cách xử lý đúng việc
+// xoay khoá.
 func (a *Authenticator) keyFor(ctx context.Context, kid string) (*rsa.PublicKey, error) {
 	a.mu.RLock()
 	key, ok := a.keys[kid]
@@ -178,8 +178,8 @@ func (a *Authenticator) keyFor(ctx context.Context, kid string) (*rsa.PublicKey,
 
 	if err := a.refresh(ctx); err != nil {
 		if ok {
-			// Serve the cached key rather than reject every request while
-			// Keycloak restarts.
+			// Dùng khoá đã cache thay vì từ chối mọi request trong lúc Keycloak
+			// đang khởi động lại.
 			return key, nil
 		}
 		return nil, err
@@ -248,5 +248,5 @@ func (a *Authenticator) refresh(ctx context.Context) error {
 	return nil
 }
 
-// JWT uses base64url without padding (RFC 7515 §2).
+// JWT dùng base64url không đệm (RFC 7515 §2).
 func b64(s string) ([]byte, error) { return base64.RawURLEncoding.DecodeString(s) }

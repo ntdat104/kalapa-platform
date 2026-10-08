@@ -1,19 +1,20 @@
-# Base values for every Kalapa Go service.
-# Service charts override only what differs; anything not listed there uses
-# these numbers, which are tuned for a single-node 7 GB minikube.
+# Giá trị nền cho mọi service Go của Kalapa.
+# Các chart service chỉ ghi đè phần khác biệt; thứ gì không khai báo ở đó sẽ
+# dùng các con số dưới đây, vốn được chỉnh cho minikube một node 8 GB.
 
 replicaCount: 1
 
-# How many old ReplicaSets to retain for rollback. The default of 10 keeps ten
-# dead ReplicaSet objects per service cluttering etcd and `kubectl get all`.
+# Giữ lại bao nhiêu ReplicaSet cũ để rollback. Mặc định của Kubernetes là 10,
+# nghĩa là mười object ReplicaSet chết cho mỗi service nằm mãi trong etcd và
+# làm rác `kubectl get all`.
 revisionHistoryLimit: 3
 
 image:
   repository: ghcr.io/kalapa-lab/kalapa-gateway
-  # `latest` is a trap under GitOps: Argo CD cannot tell that the tag now
-  # points at a different digest, so it reports Synced while running stale
-  # code. The CD workflow rewrites this field to an immutable short-SHA tag;
-  # `latest` only ever applies before the first pipeline run.
+  # `latest` là cái bẫy dưới GitOps: Argo CD không có cách nào biết tag này giờ
+  # trỏ tới một digest khác, nên nó báo Synced trong khi cluster chạy code cũ.
+  # Workflow CD sẽ ghi đè trường này bằng tag short-SHA bất biến; `latest` chỉ
+  # có tác dụng trước lần chạy pipeline đầu tiên.
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -22,26 +23,26 @@ nameOverride: ""
 fullnameOverride: ""
 
 ports:
-  http: 8080   # business traffic, behind the Service and the Ingress
-  admin: 9090  # /healthz/*, /metrics — kubelet and Prometheus only
+  http: 8080   # traffic nghiệp vụ, nằm sau Service và Ingress
+  admin: 9090  # /healthz/*, /metrics — chỉ kubelet và Prometheus
 
 service:
   type: ClusterIP
   port: 80
 
 # ---------------------------------------------------------------------------
-# Resources
+# Tài nguyên
 #
-# requests  -> what the scheduler reserves, and the denominator for HPA
-#              utilisation targets
-# limits    -> the cgroup ceiling; exceeding memory means OOMKill, exceeding
-#              CPU means throttling (never a kill)
+# requests  -> phần scheduler giữ chỗ, đồng thời là mẫu số cho mục tiêu
+#              utilisation của HPA
+# limits    -> trần cgroup; vượt bộ nhớ là bị OOMKill, vượt CPU là bị throttle
+#              (không bao giờ bị giết)
 #
-# requests == limits puts the pod in the Guaranteed QoS class: it is evicted
-# last under node memory pressure. Leaving requests below limits gives
-# Burstable, which is cheaper to pack but first in line to be evicted. On a
-# single-node lab where the platform components are the memory hogs,
-# Guaranteed for the app pods is the right trade.
+# requests == limits đưa pod vào lớp QoS Guaranteed: nó bị evict sau cùng khi
+# node thiếu bộ nhớ. Để requests thấp hơn limits thì được Burstable, xếp chỗ
+# tiết kiệm hơn nhưng đứng đầu hàng bị evict. Trên lab một node nơi các thành
+# phần nền tảng mới là thứ ngốn bộ nhớ, để pod ứng dụng ở Burstable là đánh đổi
+# hợp lý.
 # ---------------------------------------------------------------------------
 resources:
   requests:
@@ -51,56 +52,57 @@ resources:
     cpu: 300m
     memory: 96Mi
 
-# Soft heap ceiling for the Go GC. Keep it ~25% under limits.memory: the
-# difference covers goroutine stacks, the runtime's own allocations and
-# fragmentation, none of which GOMEMLIMIT governs.
+# Trần mềm cho heap của bộ dọn rác Go. Giữ nó thấp hơn limits.memory khoảng
+# 25%: phần chênh dành cho stack của goroutine, phần runtime tự cấp phát và
+# phân mảnh — những thứ GOMEMLIMIT không quản.
 goMemLimit: "72MiB"
 
 strategy:
-  # maxUnavailable: 0 -> the replacement must be Ready before the old pod goes.
+  # maxUnavailable: 0 -> pod thay thế phải Ready trước khi pod cũ bị gỡ.
   maxUnavailable: 0
   maxSurge: 1
 
-# preStop pause + in-flight drain must both fit inside the grace period:
-#   preStopSleepSeconds (5) + app shutdownTimeout (20) = 25 < 45
+# Khoảng dừng preStop cộng thời gian xả request đang chạy phải lọt trong khoảng
+# ân hạn:  preStopSleepSeconds (5) + shutdownTimeout của app (20) = 25 < 45
 terminationGracePeriodSeconds: 45
 preStopSleepSeconds: 5
 
 probes:
-  # startup: allows 30 x 2s = 60s for migrations and the first Kafka metadata
-  # fetch before liveness starts counting.
+  # startup: cho phép 30 x 2s = 60s để chạy migration và lấy metadata Kafka lần
+  # đầu, trước khi liveness bắt đầu đếm.
   startup:
     periodSeconds: 2
     failureThreshold: 30
   liveness:
     periodSeconds: 10
-    # 3 x 10s = 30s of consecutive failure before a restart. Tighter than this
-    # and a GC pause or a slow node can restart a healthy pod.
+    # 3 x 10s = 30s hỏng liên tục mới restart. Chặt hơn mức này thì một lần GC
+    # dừng lâu hoặc một node chậm cũng đủ làm restart một pod đang khoẻ.
     failureThreshold: 3
   readiness:
     periodSeconds: 5
-    # Quicker to fail than liveness on purpose: removing a struggling pod from
-    # the load balancer is cheap and reversible; restarting it is neither.
+    # Cố ý hỏng nhanh hơn liveness: gỡ một pod đang vật lộn ra khỏi load
+    # balancer thì rẻ và đảo ngược được, còn restart nó thì không.
     failureThreshold: 3
 
 # ---------------------------------------------------------------------------
-# Security context
+# Ngữ cảnh bảo mật
 # ---------------------------------------------------------------------------
 podSecurityContext:
   runAsNonRoot: true
-  # 65532 is distroless' `nonroot` user. It must match the USER line in
-  # build/Dockerfile or the container cannot read its own binary.
+  # 65532 là user `nonroot` của distroless. Nó PHẢI khớp dòng USER trong
+  # build/Dockerfile, nếu không container không đọc được chính file nhị phân
+  # của mình.
   runAsUser: 65532
   runAsGroup: 65532
   fsGroup: 65532
   seccompProfile:
-    # RuntimeDefault blocks ~44 rarely-used syscalls. Required by the
-    # `restricted` Pod Security Standard, and free for a Go service.
+    # RuntimeDefault chặn khoảng 44 syscall hiếm dùng. Bắt buộc với Pod Security
+    # Standard mức `restricted`, và chẳng tốn gì với một service Go.
     type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false
-  # A static Go binary needs no capabilities at all, not even the default set.
+  # Một file nhị phân Go tĩnh không cần capability nào cả, kể cả bộ mặc định.
   capabilities:
     drop: ["ALL"]
   readOnlyRootFilesystem: true
@@ -112,22 +114,22 @@ serviceAccount:
   annotations: {}
   name: ""
 
-# These services never call the API server, so the projected token is pure
-# attack surface.
+# Các service này không bao giờ gọi API server, nên token được mount vào pod
+# thuần tuý chỉ là bề mặt tấn công.
 automountServiceAccountToken: false
 
 # ---------------------------------------------------------------------------
-# Configuration
-# Non-secret settings come from a shared ConfigMap mounted at /etc/kalapa;
-# secrets arrive as env vars from Secrets. Reloader restarts the pod when
-# either changes.
+# Cấu hình
+# Phần không nhạy cảm đến từ một ConfigMap dùng chung mount tại /etc/kalapa;
+# phần bí mật đến dưới dạng biến môi trường từ Secret. Reloader restart pod khi
+# một trong hai thay đổi.
 # ---------------------------------------------------------------------------
 configMapName: kalapa-config
-extraConfigMap: ""      # optional per-service overlay ConfigMap
-extraConfigKey: ""      # the key within it, e.g. "kyc.yaml"
+extraConfigMap: ""      # ConfigMap phủ riêng cho từng service (tuỳ chọn)
+extraConfigKey: ""      # khoá bên trong nó, ví dụ "kyc.yaml"
 
-# Fed into the pod-template checksum annotation so `helm upgrade` rolls the
-# Deployment when config changes even if Reloader is absent.
+# Được đưa vào annotation checksum của pod template, để `helm upgrade` tự roll
+# lại Deployment khi cấu hình đổi, kể cả khi không có Reloader.
 config: {}
 
 envFromSecrets:
@@ -145,7 +147,7 @@ podAnnotations: {}
 podLabels: {}
 
 # ---------------------------------------------------------------------------
-# Ingress — only the gateway enables this.
+# Ingress — chỉ gateway bật phần này.
 # ---------------------------------------------------------------------------
 ingress:
   enabled: false
@@ -158,8 +160,8 @@ ingress:
   tls: []
 
 # ---------------------------------------------------------------------------
-# Autoscaling. Off by default: on a single-node cluster an HPA competes with
-# the platform components for the same few gigabytes. Lab 4 turns it on.
+# Tự động co giãn. Mặc định tắt: trên cluster một node, HPA tranh cùng vài
+# gigabyte với các thành phần nền tảng. Lab 4 sẽ bật nó.
 # ---------------------------------------------------------------------------
 autoscaling:
   enabled: false
@@ -171,24 +173,24 @@ autoscaling:
   scaleDownStabilizationSeconds: 300
 
 podDisruptionBudget:
-  # See the comment in templates/pdb.yaml: enabling this with replicaCount: 1
-  # makes `kubectl drain` hang forever.
+  # Xem chú thích trong templates/pdb.yaml: bật cái này cùng replicaCount: 1 sẽ
+  # làm `kubectl drain` treo vĩnh viễn.
   enabled: false
   minAvailable: ""
   maxUnavailable: 1
 
 serviceMonitor:
   enabled: true
-  # Must equal the Helm release name of kube-prometheus-stack, or Prometheus
-  # will not adopt the ServiceMonitor.
+  # Phải bằng đúng tên release Helm của kube-prometheus-stack, nếu không
+  # Prometheus sẽ không nhận ServiceMonitor này.
   prometheusRelease: prometheus
   path: /metrics
   interval: 30s
   scrapeTimeout: 10s
 
 networkPolicy:
-  # Off by default because minikube's default CNI silently ignores these
-  # objects — see templates/networkpolicy.yaml.
+  # Mặc định tắt vì CNI mặc định của minikube âm thầm bỏ qua các object này —
+  # xem templates/networkpolicy.yaml.
   enabled: false
   allowFromNamespaces: []
   allowFromPods: []

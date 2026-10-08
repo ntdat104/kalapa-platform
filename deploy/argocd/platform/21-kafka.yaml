@@ -22,8 +22,8 @@ spec:
       limit: 5
       backoff: { duration: 20s, factor: 2, maxDuration: 5m }
   ignoreDifferences:
-    # Strimzi defaults a long list of fields on the Kafka resource. Without
-    # this, the Application never leaves OutOfSync even when it is correct.
+    # Strimzi tự điền mặc định cho một loạt trường trên tài nguyên Kafka. Thiếu
+    # khối này, Application không bao giờ rời khỏi OutOfSync dù nó hoàn toàn đúng.
     - group: kafka.strimzi.io
       kind: Kafka
       jqPathExpressions:

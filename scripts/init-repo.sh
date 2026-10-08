@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# One-time setup: create the GitHub repo and write its URL into every Argo CD
-# manifest.
+# Thiết lập một lần: tạo repo GitHub và ghi URL của nó vào mọi manifest Argo CD.
 #
-# The repo URL is deliberately committed rather than injected at apply time.
-# Under GitOps the cluster's entire desired state must be reconstructable from
-# the repo alone — a URL supplied by whoever happened to run a script is state
-# that lives in someone's shell history.
+# URL của repo được commit vào một cách có chủ ý, thay vì tiêm vào lúc apply.
+# Dưới GitOps, toàn bộ trạng thái mong muốn của cluster phải tái dựng được chỉ
+# từ repo — một URL do người nào đó tình cờ chạy script cung cấp là trạng thái
+# chỉ tồn tại trong lịch sử shell của người đó.
 source "$(dirname "$0")/lib.sh"
 
 ROOT=$(repo_root)
@@ -28,9 +27,9 @@ else
     ok "repo ${owner}/${REPO_NAME} already exists"
   else
     info "Creating ${owner}/${REPO_NAME} (${VISIBILITY})"
-    # Public, because Argo CD then needs no credentials to read it. A private
-    # repo works too but requires a repo Secret in the argocd namespace —
-    # see docs/04-gitops-with-argocd.md.
+    # Để public, vì khi đó Argo CD không cần thông tin đăng nhập nào để đọc.
+    # Repo private cũng được nhưng phải tạo thêm một Secret repo trong namespace
+    # argocd — xem docs/04-gitops-with-argocd.md.
     gh repo create "${owner}/${REPO_NAME}" "--${VISIBILITY}" \
       --description "Kalapa platform — Kubernetes/GitOps lab" >/dev/null
     ok "created"
@@ -38,14 +37,14 @@ else
 fi
 
 info "Writing the repo URL into the Argo CD manifests"
-# Only Argo CD manifests carry the placeholder; the charts are repo-agnostic.
+# Chỉ các manifest của Argo CD mang placeholder; các chart không phụ thuộc repo.
 files=$(grep -rl '__GIT_REPO_URL__\|__GIT_BRANCH__' "$ROOT/deploy" || true)
 if [ -z "$files" ]; then
   warn "no placeholders left — already initialised"
 else
   for f in $files; do
-    # BSD sed (macOS) needs the empty -i argument; GNU sed does not. Writing
-    # to a temp file sidesteps the difference.
+    # sed của BSD (macOS) cần tham số -i rỗng, còn sed của GNU thì không. Ghi ra
+    # file tạm là cách tránh hẳn khác biệt đó.
     sed -e "s|__GIT_REPO_URL__|${url}|g" -e "s|__GIT_BRANCH__|${BRANCH}|g" "$f" > "$f.tmp"
     mv "$f.tmp" "$f"
     echo "    $(basename "$f")"

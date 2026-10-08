@@ -1,8 +1,8 @@
 apiVersion: v2
 name: kafka
 description: |
-  A single-node Strimzi Kafka cluster in KRaft mode, plus the topic the KYC
-  and scoring services exchange. The Strimzi operator is installed separately
+  Một cluster Kafka Strimzi một node chạy chế độ KRaft, cùng topic mà hai service
+  KYC và scoring trao đổi với nhau. Operator Strimzi được cài riêng
   (deploy/argocd/platform/02-strimzi-operator.yaml).
 type: application
 version: 0.1.0

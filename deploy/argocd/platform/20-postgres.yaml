@@ -4,7 +4,7 @@ metadata:
   name: postgres
   namespace: argocd
   annotations:
-    # Wave 10: after the CNPG operator (-10) has installed the Cluster CRD.
+    # Wave 10: sau khi operator CNPG (wave -10) đã cài xong CRD Cluster.
     argocd.argoproj.io/sync-wave: "10"
 spec:
   project: platform
@@ -20,14 +20,14 @@ spec:
     syncOptions:
       - CreateNamespace=true
     retry:
-      # The operator takes a while to create the Cluster's pods; without a
-      # retry the first sync is marked Degraded and stays that way.
+      # Operator cần một lúc mới tạo xong các pod của Cluster; không có retry
+      # thì lần đồng bộ đầu bị đánh dấu Degraded rồi nằm nguyên như vậy.
       limit: 5
       backoff: { duration: 15s, factor: 2, maxDuration: 3m }
   ignoreDifferences:
-    # The operator writes status and a handful of defaulted spec fields back
-    # onto the Cluster. Argo would read those as drift and fight the operator
-    # on every reconcile.
+    # Operator ghi ngược status và một vài trường spec được điền mặc định lên
+    # chính Cluster. Argo sẽ đọc chúng thành drift và đánh nhau với operator ở
+    # mỗi lần điều hoà.
     - group: postgresql.cnpg.io
       kind: Cluster
       jsonPointers:

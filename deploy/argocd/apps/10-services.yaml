@@ -1,20 +1,19 @@
-# An ApplicationSet generates Applications from a template. Three near-identical
-# Application manifests would work just as well today; the reason to use a
-# generator is that adding a fourth service becomes "create a chart directory"
-# instead of "create a chart directory and remember to also write an
-# Application and get its project, sync policy and wave right".
+# ApplicationSet sinh ra các Application từ một khuôn mẫu. Ba manifest
+# Application gần như giống hệt nhau thì hôm nay cũng chạy tốt; lý do dùng bộ
+# sinh là để thêm service thứ tư chỉ còn là "tạo một thư mục chart" thay vì "tạo
+# một thư mục chart rồi nhớ viết thêm một Application và đặt đúng project, sync
+# policy và sync wave cho nó".
 #
-# The git directory generator scans the repo at sync time, so the set of
-# Applications is derived from the repo's actual contents rather than from a
-# list someone has to keep in step with it.
+# Bộ sinh kiểu git directory quét repo ngay lúc đồng bộ, nên tập Application
+# được suy ra từ nội dung thật của repo chứ không từ một danh sách mà ai đó phải
+# nhớ cập nhật theo.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: kalapa-services
   namespace: argocd
 spec:
-  # Without this, deleting the ApplicationSet leaves its Applications behind
-  # as orphans.
+  # Thiếu dòng này, xoá ApplicationSet sẽ để lại các Application con mồ côi.
   syncPolicy:
     preserveResourcesOnDeletion: false
   generators:
@@ -23,9 +22,9 @@ spec:
         revision: __GIT_BRANCH__
         directories:
           - path: deploy/charts/*
-          # The base chart is a dependency, not a deployable unit; the config
-          # and infra charts have their own Applications with different
-          # projects and waves.
+          # Chart gốc là một dependency, không phải thứ để deploy; còn chart cấu
+          # hình và chart hạ tầng đã có Application riêng với project và sync wave
+          # khác.
           - path: deploy/charts/go-service
             exclude: true
           - path: deploy/charts/kalapa-config
@@ -38,7 +37,7 @@ spec:
             exclude: true
   template:
     metadata:
-      # path.basename is the directory name: gateway, kyc, scoring.
+      # path.basename chính là tên thư mục: gateway, kyc, scoring.
       name: '{{path.basename}}'
       annotations:
         argocd.argoproj.io/sync-wave: "30"

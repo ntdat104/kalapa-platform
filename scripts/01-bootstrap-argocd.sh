@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Installs Argo CD and applies the single root Application. Everything after
-# this point is driven by Git.
+# Cài Argo CD và apply đúng một root Application. Từ thời điểm này trở đi, mọi
+# thứ đều do Git điều khiển.
 source "$(dirname "$0")/lib.sh"
 
 ROOT=$(repo_root)
@@ -28,8 +28,8 @@ wait_for "repo-server" 300 \
   kube -n argocd rollout status deployment/argocd-repo-server --timeout=10s
 
 info "Applying the root Application"
-# The only `kubectl apply` in the whole workflow. From here the cluster pulls
-# its state from Git instead of having it pushed.
+# Lệnh `kubectl apply` DUY NHẤT trong cả quy trình. Từ đây cluster tự kéo trạng
+# thái về từ Git, thay vì bị đẩy vào.
 kube apply -f "$ROOT/deploy/argocd/bootstrap/root-app.yaml"
 ok "root application created"
 

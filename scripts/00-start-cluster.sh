@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Creates the minikube cluster this stack is sized for.
+# Tạo cluster minikube mà toàn bộ stack này được chỉnh cho vừa.
 #
-# Memory maths, measured rather than guessed (see README.md for the full table):
+# Phép tính bộ nhớ, đo thật chứ không đoán (bảng đầy đủ ở README.md):
 #
-#   sum of all container memory REQUESTS   ~5.4 GB
-#   sum of all container memory LIMITS     ~8.4 GB
-#   Kubernetes control plane itself        ~1.2 GB
+#   tổng REQUESTS bộ nhớ của mọi container   ~5,4 GB
+#   tổng LIMITS bộ nhớ của mọi container     ~8,4 GB
+#   bản thân control plane của Kubernetes    ~1,2 GB
 #
-# 8 GB is therefore the comfortable floor with every component on. At 6.5 GB the
-# limits reach 105% of allocatable: the cluster still converges and runs, but a
-# simultaneous restart of several components starves the node and the API server
-# stops answering for a minute or two. Docker Desktop must be allocated at least
-# 10 GB (Settings > Resources) for 8 GB here to fit alongside its own overhead.
+# Vậy 8 GB là ngưỡng sàn thoải mái khi bật đủ mọi thành phần. Ở mức 6,5 GB thì
+# tổng limits chạm 105% phần cấp phát được: cluster vẫn hội tụ và chạy, nhưng
+# khi vài thành phần restart cùng lúc thì node bị bỏ đói và API server ngừng trả
+# lời một hai phút. Docker Desktop phải được cấp ít nhất 10 GB (Settings >
+# Resources) thì 8 GB ở đây mới vừa, tính cả chi phí của chính nó.
 #
-# Short on memory? `make up-local` skips Argo CD (-1.3 GB of limits) and
-# dropping Keycloak frees another 1.2 GB.
+# Eo hẹp bộ nhớ? `make up-local` bỏ qua Argo CD (giảm 1,3 GB limits) và bỏ
+# Keycloak giải phóng thêm 1,2 GB nữa.
 source "$(dirname "$0")/lib.sh"
 
 MEMORY="${MEMORY:-8g}"
@@ -45,9 +45,9 @@ if minikube status -p "$CLUSTER_NAME" >/dev/null 2>&1; then
   ok "cluster '$CLUSTER_NAME' already running"
 else
   info "Starting minikube profile '$CLUSTER_NAME' (${CPUS} CPU, ${MEMORY} RAM, ${DISK} disk)"
-  # --cni=calico is what makes NetworkPolicy objects actually enforce. The
-  # default bridge CNI accepts them and ignores them, so a policy you write
-  # appears to work while blocking nothing. Costs ~150Mi.
+  # --cni=calico chính là thứ khiến các object NetworkPolicy thực sự có hiệu
+  # lực. CNI bridge mặc định nhận chúng rồi bỏ qua, nên một policy bạn viết trông
+  # như đang chạy mà chẳng chặn gì cả. Tốn khoảng 150Mi.
   cni_flag=()
   [ "$CNI" != "auto" ] && cni_flag=(--cni="$CNI")
   minikube start \
@@ -61,9 +61,9 @@ else
 fi
 
 info "Enabling addons"
-# ingress  -> the NGINX ingress controller; every *.kalapa.local host needs it
-# metrics-server -> `kubectl top` and, crucially, the HPA. Without it an HPA
-#                   reports <unknown>/70% forever and never scales.
+# ingress  -> NGINX ingress controller; mọi host *.kalapa.local đều cần nó
+# metrics-server -> cần cho `kubectl top` và, quan trọng hơn, cho HPA. Thiếu nó
+#                   thì HPA báo <unknown>/70% mãi mãi và không bao giờ co giãn.
 for addon in ingress metrics-server storage-provisioner default-storageclass; do
   minikube addons enable "$addon" -p "$CLUSTER_NAME" >/dev/null 2>&1 && ok "$addon"
 done

@@ -1,8 +1,7 @@
 {{/*
-Keycloak gets its own Cluster rather than a second database inside the
-application cluster. The reason is blast radius: a schema migration during a
-Keycloak upgrade must not be able to lock up the tables the KYC service is
-writing to.
+Keycloak có một Cluster riêng thay vì thêm một database trong cluster của ứng
+dụng. Lý do là bán kính thiệt hại: một lần migration schema trong khi nâng cấp
+Keycloak không được phép khoá những bảng mà service KYC đang ghi vào.
 */}}
 apiVersion: v1
 kind: Secret

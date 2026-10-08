@@ -1,13 +1,14 @@
 apiVersion: v2
 name: kyc
-description: Kalapa kyc service
+description: Service kyc của Kalapa
 type: application
 version: 0.1.0
 appVersion: "latest"
 dependencies:
-  # file:// keeps the base chart in this repo rather than a chart registry, so
-  # Argo CD resolves it from the same commit it is syncing. A registry-hosted
-  # base chart would let the chart and the app drift between syncs.
+  # file:// giữ chart gốc nằm ngay trong repo này thay vì trên một chart
+  # registry, nhờ vậy Argo CD giải quyết nó từ đúng commit nó đang đồng bộ. Một
+  # chart gốc đặt trên registry sẽ để chart và ứng dụng lệch nhau giữa các lần
+  # đồng bộ.
   - name: go-service
     version: 0.1.0
     repository: file://../go-service

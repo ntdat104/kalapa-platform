@@ -1,10 +1,10 @@
-# An AppProject is Argo CD's tenancy boundary. Without one, every Application
-# runs under `default`, which permits any source repo, any destination cluster
-# and any resource kind — i.e. a compromised Git repo becomes cluster-admin.
+# AppProject là ranh giới phân quyền của Argo CD. Không có nó, mọi Application
+# chạy dưới `default`, vốn cho phép mọi repo nguồn, mọi cluster đích và mọi loại
+# tài nguyên — tức là một Git repo bị chiếm quyền sẽ tương đương cluster-admin.
 #
-# Two projects here draw the line that matters in practice: platform
-# components may create cluster-scoped objects (CRDs, ClusterRoles); the
-# application project may not.
+# Hai project ở đây vạch ra ranh giới thực sự quan trọng: thành phần nền tảng
+# được tạo object phạm vi cluster (CRD, ClusterRole); project của ứng dụng thì
+# không.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -14,8 +14,8 @@ spec:
   description: Operators, data stores and the observability stack
   sourceRepos:
     - __GIT_REPO_URL__
-    # Platform Applications render upstream charts, so their repos must be
-    # allow-listed too.
+    # Các Application nền tảng render chart từ bên ngoài, nên repo của chúng
+    # cũng phải nằm trong danh sách cho phép.
     - https://cloudnative-pg.github.io/charts
     - https://strimzi.io/charts/
     - https://prometheus-community.github.io/helm-charts

@@ -1,4 +1,4 @@
-# KYC owns the write path: Postgres plus a Kafka producer.
+# KYC sở hữu đường ghi: Postgres cộng với một Kafka producer.
 go-service:
   nameOverride: kyc
   fullnameOverride: kyc
@@ -14,8 +14,8 @@ go-service:
     - kalapa-postgres-credentials
 
   ingress:
-    # Reachable only through the gateway. Giving every service its own Ingress
-    # is how an internal API ends up on the public internet.
+    # Chỉ với tới được qua gateway. Cho mỗi service một Ingress riêng chính là
+    # cách một API nội bộ lọt ra Internet.
     enabled: false
 
   resources:
@@ -30,8 +30,8 @@ go-service:
   probes:
     startup:
       periodSeconds: 2
-      # 45 x 2s = 90s. Longer than the others because this pod runs the schema
-      # migration and waits for Kafka metadata on first start.
+      # 45 x 2s = 90s. Dài hơn các service khác vì pod này chạy migration schema
+      # và chờ metadata của Kafka trong lần khởi động đầu.
       failureThreshold: 45
 
   networkPolicy:

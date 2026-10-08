@@ -9,16 +9,16 @@ credentialsSecret: kalapa-db-credentials
 
 parameters:
   sharedBuffers: 64MB
-  # 4 conns/pod x 2 DB-backed services x a little headroom. Postgres allocates
-  # per-connection memory up front, so an inflated max_connections wastes RAM
-  # whether or not the connections exist.
+  # 4 kết nối/pod x 2 service có dùng DB x một chút dư. Postgres cấp phát bộ nhớ
+  # cho MỖI kết nối ngay từ đầu, nên max_connections phình to là lãng phí RAM dù
+  # các kết nối đó có tồn tại hay không.
   maxConnections: "50"
 
 storage:
   size: 2Gi
-  # Empty -> the cluster default. On minikube that is the `standard`
-  # hostPath provisioner, which means the data lives on the node and does not
-  # survive `minikube delete`.
+  # Để rỗng -> dùng StorageClass mặc định của cluster. Trên minikube đó là
+  # provisioner `standard` kiểu hostPath, nghĩa là dữ liệu nằm trên node và
+  # không sống sót qua `minikube delete`.
   storageClass: ""
 
 resources:
@@ -26,8 +26,8 @@ resources:
     cpu: 100m
     memory: 256Mi
   limits:
-    # No CPU limit on purpose: throttling Postgres during WAL replay or a
-    # checkpoint turns a slow query into a cluster-wide stall.
+    # Cố ý không đặt limit CPU: throttle Postgres trong lúc nó replay WAL hoặc
+    # chạy checkpoint sẽ biến một truy vấn chậm thành cả cluster đứng hình.
     memory: 320Mi
 
 monitoring:

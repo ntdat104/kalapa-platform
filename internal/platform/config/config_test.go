@@ -25,8 +25,9 @@ kafka:
 	os.WriteFile(overlay, []byte("kafka:\n  topic: from-overlay\n"), 0o600)
 
 	t.Setenv("CONFIG_FILE", base)
-	// The overlay must beat the base file, and a missing third file must not
-	// be fatal — that is what makes `go run` work with no ConfigMap mounted.
+	// Lớp phủ phải thắng file nền, và một file thứ ba không tồn tại không được
+	// phép là lỗi — chính điều đó làm `go run` chạy được khi không mount
+	// ConfigMap nào.
 	t.Setenv("CONFIG_EXTRA_FILES", overlay+",/nonexistent/also-fine.yaml")
 	t.Setenv("POSTGRES_PASSWORD", "s3cret")
 	t.Setenv("HTTP_PORT", "8081")

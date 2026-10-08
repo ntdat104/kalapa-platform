@@ -5,26 +5,25 @@ metadata:
   labels:
     {{- include "go-service.labels" . | nindent 4 }}
   annotations:
-    # Reloader watches the ConfigMaps/Secrets this pod mounts and restarts the
-    # Deployment when their content changes. Without it, a ConfigMap edit
-    # updates the mounted file but the process never re-reads it.
+    # Reloader theo dõi các ConfigMap/Secret mà pod này mount và restart
+    # Deployment khi nội dung của chúng đổi. Không có nó, sửa ConfigMap chỉ cập
+    # nhật file được mount còn process thì không bao giờ đọc lại.
     reloader.stakater.com/search: "true"
     {{- with .Values.deployment.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
-  # Omitted entirely when the HPA owns this field. Setting both makes Helm and
-  # the HPA fight: every sync resets the replica count the HPA just chose.
+  # Bỏ hẳn trường này khi HPA sở hữu nó. Đặt cả hai thì Helm và HPA đánh nhau:
+  # mỗi lần đồng bộ lại kéo số replica về giá trị cứng, xoá quyết định của HPA.
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # maxUnavailable: 0 means the new pod must pass its readiness probe
-      # before an old one is removed — zero-downtime at the cost of needing
-      # headroom for one extra pod.
+      # maxUnavailable: 0 nghĩa là pod mới phải qua readiness probe rồi mới gỡ
+      # một pod cũ — không gián đoạn, đổi lại cần chỗ trống cho một pod dư.
       maxUnavailable: {{ .Values.strategy.maxUnavailable }}
       maxSurge: {{ .Values.strategy.maxSurge }}
   selector:
@@ -44,9 +43,9 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ include "go-service.serviceAccountName" . }}
-      # The pod does not talk to the API server, so it has no use for a
-      # mounted token. Turning it off removes a credential an attacker could
-      # otherwise pick up from the filesystem.
+      # Pod không nói chuyện với API server nên chẳng dùng gì tới token được
+      # mount. Tắt nó đi là gỡ bỏ một thông tin đăng nhập mà kẻ tấn công vốn có
+      # thể nhặt ngay trong filesystem.
       automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -67,8 +66,8 @@ spec:
             name: {{ .Values.extraConfigMap }}
         {{- end }}
         {{- if .Values.securityContext.readOnlyRootFilesystem }}
-        # A read-only root filesystem still needs somewhere writable for
-        # temp files; an emptyDir gives that without making / writable.
+        # Filesystem gốc chỉ-đọc vẫn cần một chỗ ghi được cho file tạm;
+        # emptyDir cho điều đó mà không phải mở quyền ghi cho /.
         - name: tmp
           emptyDir:
             medium: Memory
@@ -91,9 +90,9 @@ spec:
               containerPort: {{ .Values.ports.admin }}
               protocol: TCP
           envFrom:
-            # Credentials arrive as env vars from a Secret, never through the
-            # mounted ConfigMap: ConfigMap content shows up in `helm get
-            # values`, `kubectl describe` and the Argo CD UI.
+            # Thông tin đăng nhập đến dưới dạng biến môi trường từ Secret, không
+            # bao giờ qua ConfigMap được mount: nội dung ConfigMap hiện ra trong
+            # `helm get values`, `kubectl describe` và cả giao diện Argo CD.
             {{- range .Values.envFromSecrets }}
             - secretRef:
                 name: {{ . }}
@@ -112,23 +111,22 @@ spec:
             - name: CONFIG_EXTRA_FILES
               value: /etc/kalapa/service/{{ .Values.extraConfigKey }}
             {{- end }}
-            # GOMAXPROCS must track the CPU *limit*, not the node's core count.
-            # Left alone, the Go runtime sees all 10 host cores, starts 10 Ps,
-            # and the scheduler thrashes against a 200m quota.
+            # GOMAXPROCS phải bám theo LIMIT CPU, không phải số lõi của node.
+            # Để mặc, Go runtime thấy cả 10 lõi của host, khởi 10 luồng thực thi,
+            # và bộ lập lịch thrash khi bị nhốt trong hạn mức 300m.
             - name: GOMAXPROCS
               valueFrom:
                 resourceFieldRef:
                   resource: limits.cpu
                   divisor: "1"
-            # GOMEMLIMIT is the soft limit that makes the GC work harder as the
-            # heap approaches the cgroup limit, instead of the kernel OOM-
-            # killing the pod. Set below limits.memory to leave room for
-            # stacks and the runtime itself.
+            # GOMEMLIMIT là trần mềm khiến bộ dọn rác làm việc mạnh hơn khi heap
+            # tiến gần trần cgroup, thay vì để nhân OOM-kill pod. Đặt thấp hơn
+            # limits.memory để chừa chỗ cho stack và cho bản thân runtime.
             - name: GOMEMLIMIT
               value: {{ .Values.goMemLimit | quote }}
-            # Downward API: these become resource attributes on every span and
-            # every log line, which is what lets you filter a trace down to one
-            # pod during a bad rollout.
+            # Downward API: các giá trị này trở thành thuộc tính tài nguyên trên
+            # mọi span và mọi dòng log — chính chúng cho phép bạn lọc một trace
+            # xuống đúng một pod trong lúc một đợt rollout đang hỏng.
             - name: K8S_POD_NAME
               valueFrom:
                 fieldRef:
@@ -160,10 +158,10 @@ spec:
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          # startupProbe gates the other two. It allows a slow first start
-          # (schema migration, Kafka metadata fetch) without having to loosen
-          # the liveness probe, which would then be slow to catch a real hang
-          # for the rest of the pod's life.
+          # startupProbe chắn hai probe kia. Nó cho phép lần khởi động đầu chậm
+          # (chạy migration, lấy metadata Kafka) mà không phải nới lỏng liveness
+          # probe — vốn sẽ chậm phát hiện treo thật trong suốt phần đời còn lại
+          # của pod.
           startupProbe:
             httpGet:
               path: /healthz/live
@@ -188,22 +186,22 @@ spec:
             timeoutSeconds: 3
           lifecycle:
             preStop:
-              # Endpoint removal is asynchronous: kube-proxy and the Ingress
-              # controller learn about the terminating pod at the same time the
-              # kubelet sends SIGTERM. This pause keeps the container serving
-              # while that propagates, which is what removes the handful of
-              # 502s you otherwise see on every rolling update.
+              # Việc gỡ endpoint diễn ra bất đồng bộ: kube-proxy và Ingress
+              # controller biết tin pod sắp chết đúng vào lúc kubelet gửi
+              # SIGTERM. Khoảng dừng này giữ cho container vẫn phục vụ trong khi
+              # tin đó lan đi, nhờ vậy loại bỏ được mấy con 502 mà bạn vẫn thấy
+              # ở mọi lần rolling update.
               #
-              # The native `sleep` action (GA since v1.33) is used instead of
-              # `exec: ["sh","-c","sleep 5"]` on purpose — the distroless image
-              # has no shell, so the exec form would fail silently and you
-              # would be left debugging phantom 502s.
+              # Dùng lifecycle action `sleep` gốc (GA từ v1.33) thay cho
+              # `exec: ["sh","-c","sleep 5"]` là có chủ ý — image distroless
+              # không có shell, nên dạng exec sẽ thất bại âm thầm và bạn ngồi
+              # debug mấy con 502 ma.
               sleep:
                 seconds: {{ .Values.preStopSleepSeconds }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      # Must exceed preStop sleep + the app's own shutdown timeout, or the
-      # kubelet SIGKILLs mid-drain and in-flight requests are cut.
+      # Phải lớn hơn thời gian ngủ preStop cộng shutdownTimeout của ứng dụng,
+      # nếu không kubelet sẽ SIGKILL giữa chừng và cắt ngang request đang chạy.
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:

@@ -1,14 +1,14 @@
 {{/*
-Chart name, overridable so a release named `kyc` renders objects named `kyc`
-rather than `kyc-go-service`.
+Tên chart, cho phép ghi đè để một release tên `kyc` sinh ra object tên `kyc`
+thay vì `kyc-go-service`.
 */}}
 {{- define "go-service.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
-Fully qualified name. Truncated at 63 chars because that is the DNS label
-limit, and a Service name longer than that is rejected by the API server.
+Tên đầy đủ. Cắt ở 63 ký tự vì đó là giới hạn của một nhãn DNS, và API server sẽ
+từ chối một Service có tên dài hơn thế.
 */}}
 {{- define "go-service.fullname" -}}
 {{- if .Values.fullnameOverride }}
@@ -28,9 +28,9 @@ limit, and a Service name longer than that is rejected by the API server.
 {{- end }}
 
 {{/*
-Common labels: everything that is useful for querying but NOT part of the
-selector. Putting a version label in the selector would make every upgrade a
-rename, and Deployment selectors are immutable.
+Nhãn chung: mọi thứ hữu ích khi truy vấn nhưng KHÔNG thuộc selector. Đưa nhãn
+version vào selector sẽ biến mỗi lần nâng cấp thành một lần đổi tên, mà selector
+của Deployment thì bất biến.
 */}}
 {{- define "go-service.labels" -}}
 helm.sh/chart: {{ include "go-service.chart" . }}
@@ -43,8 +43,8 @@ app.kubernetes.io/part-of: kalapa
 {{- end }}
 
 {{/*
-Selector labels: the immutable subset. Changing these on an existing release
-requires deleting the Deployment first.
+Nhãn selector: phần bất biến. Đổi chúng trên một release đang tồn tại thì phải
+xoá Deployment đi trước đã.
 */}}
 {{- define "go-service.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "go-service.name" . }}
@@ -60,10 +60,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Checksum of the values that end up in the mounted config. Adding it to the pod
-template annotations makes `helm upgrade` roll the Deployment whenever the
-config changes — the belt to Reloader's braces, and the only mechanism that
-works when Reloader is not installed.
+Mã băm của phần giá trị sẽ đi vào file cấu hình được mount. Đưa nó vào annotation
+của pod template khiến `helm upgrade` tự roll lại Deployment mỗi khi cấu hình
+đổi — lớp bảo hiểm thứ hai bên cạnh Reloader, và là cơ chế duy nhất còn hoạt
+động khi không cài Reloader.
 */}}
 {{- define "go-service.configChecksum" -}}
 {{- toYaml .Values.config | sha256sum }}

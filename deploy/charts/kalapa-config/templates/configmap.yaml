@@ -1,9 +1,10 @@
-# One ConfigMap shared by every service, plus one small overlay per service.
+# Một ConfigMap dùng chung cho mọi service, cộng thêm một lớp phủ nhỏ cho từng
+# service.
 #
-# Why a shared base rather than per-service config: the endpoints that must
-# agree across services (the OTLP collector address, the Kafka bootstrap
-# servers, the issuer URL) are exactly the ones that break subtly when they
-# drift. Defining them once makes drift impossible.
+# Vì sao dùng nền chung thay vì cấu hình riêng từng service: những địa chỉ bắt
+# buộc phải khớp nhau giữa các service (địa chỉ OTLP collector, bootstrap server
+# của Kafka, URL issuer) đúng là những thứ hỏng một cách khó thấy khi chúng lệch
+# nhau. Khai báo một lần thì không thể lệch.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,8 +12,8 @@ metadata:
   labels:
     app.kubernetes.io/part-of: kalapa
   annotations:
-    # Reloader only considers objects carrying this annotation, so an
-    # unrelated ConfigMap edit cannot trigger a cluster-wide restart.
+    # Reloader chỉ để ý những object mang annotation này, nên sửa một ConfigMap
+    # không liên quan sẽ không gây restart toàn cluster.
     reloader.stakater.com/match: "true"
 data:
   config.yaml: |

@@ -4,8 +4,8 @@ metadata:
   name: cnpg-operator
   namespace: argocd
   annotations:
-    # Operators go before the custom resources they reconcile: applying a
-    # `Cluster` before its CRD exists fails with "no matches for kind".
+    # Operator đi trước các custom resource mà nó điều hoà: apply một `Cluster`
+    # khi CRD của nó chưa tồn tại sẽ hỏng với lỗi "no matches for kind".
     argocd.argoproj.io/sync-wave: "-10"
 spec:
   project: platform
@@ -30,6 +30,6 @@ spec:
     automated: { prune: true, selfHeal: true }
     syncOptions:
       - CreateNamespace=true
-      # CRDs are large enough to blow past the 256 KB annotation limit that
-      # Argo's default client-side apply uses to store the last-applied state.
+      # CRD đủ lớn để vượt giới hạn 256 KB của annotation mà chế độ apply phía
+      # client mặc định của Argo dùng để lưu trạng thái đã apply lần trước.
       - ServerSideApply=true

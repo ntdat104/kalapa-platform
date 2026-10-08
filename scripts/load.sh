@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Generates traffic, for watching the HPA scale, filling the Grafana panels
-# and producing enough traces for Tempo's service graph to render.
+# Sinh tải, để quan sát HPA co giãn, làm đầy các panel Grafana và tạo đủ trace
+# cho service graph của Tempo hiện ra.
 #
-#   ./scripts/load.sh 300 10     # 300 seconds, 10 requests/second
+#   ./scripts/load.sh 300 10     # 300 giây, 10 request mỗi giây
 source "$(dirname "$0")/lib.sh"
 
 DURATION="${1:-120}"

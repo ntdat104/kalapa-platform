@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Removes the cluster. PVCs go with it, so Postgres and Kafka data is lost.
+# Xoá cluster. PVC mất theo, nên dữ liệu của Postgres và Kafka cũng mất.
 source "$(dirname "$0")/lib.sh"
 
 read -r -p "Delete minikube profile '$CLUSTER_NAME' and all its data? [y/N] " reply

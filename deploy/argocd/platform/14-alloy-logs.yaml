@@ -1,9 +1,9 @@
-# Grafana Alloy collects container logs and ships them to Loki.
+# Grafana Alloy thu thập log của container và chuyển chúng vào Loki.
 #
-# YAS uses Promtail for this. Promtail reached end-of-life in early 2025 and
-# Alloy is its replacement; the mental model is identical (tail files under
-# /var/log/pods, attach labels, push to Loki) but the config language is River
-# rather than YAML. The mapping is spelled out in docs/01-yas-mapping.md.
+# YAS dùng Promtail cho việc này. Promtail đã ngừng hỗ trợ từ đầu năm 2025 và
+# Alloy là bản thay thế; mô hình tư duy y hệt (đọc file dưới /var/log/pods, gắn
+# nhãn, đẩy vào Loki) nhưng ngôn ngữ cấu hình là River chứ không phải YAML. Bảng
+# đối chiếu nằm ở docs/01-yas-mapping.md.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,24 +21,23 @@ spec:
       releaseName: alloy-logs
       values: |
         controller:
-          # DaemonSet: log files live on the node, so the collector must too.
+          # DaemonSet: file log nằm trên node, nên bộ thu thập cũng phải nằm đó.
           type: daemonset
 
         alloy:
           mounts:
-            # /var/log/pods is where the kubelet writes the per-container log
-            # directory tree.
+            # /var/log/pods là nơi kubelet dựng cây thư mục log theo từng container.
             varlog: true
-            # ...but under the DOCKER container runtime those files are only
-            # SYMLINKS into /var/lib/docker/containers. Mount /var/log alone and
-            # every tail fails with "no such file or directory" while every
-            # Alloy component still reports healthy — logs simply never arrive,
-            # with nothing in any log to say why.
+            # ...nhưng dưới container runtime là DOCKER thì các file đó chỉ là
+            # SYMLINK trỏ vào /var/lib/docker/containers. Chỉ mount /var/log thôi
+            # thì mọi lần đọc file đều hỏng với "no such file or directory",
+            # trong khi mọi component của Alloy vẫn báo healthy — log đơn giản là
+            # không bao giờ tới nơi, và không log nào nói cho bạn biết vì sao.
             #
-            # Under containerd (the default on most real clusters, and what
-            # `minikube start --container-runtime=containerd` gives you) the
-            # files under /var/log/pods are real and this mount is unnecessary.
-            # It is harmless there, so it stays on to keep both runtimes working.
+            # Dưới containerd (mặc định ở hầu hết cluster thật, và là thứ
+            # `minikube start --container-runtime=containerd` cho bạn), các file
+            # dưới /var/log/pods là file thật và mount này không cần thiết. Ở đó
+            # nó vô hại, nên cứ để bật để cả hai runtime đều chạy được.
             dockercontainers: true
           resources:
             requests:
@@ -50,10 +49,10 @@ spec:
           configMap:
             content: |-
               // ---------------------------------------------------------------
-              // 1. Discover every pod on THIS node.
-              //    Without the node filter each DaemonSet pod would discover
-              //    every pod in the cluster and then find no local log files
-              //    for most of them.
+              // 1. Phát hiện mọi pod trên CHÍNH node này.
+              //    Thiếu bộ lọc theo node, mỗi pod của DaemonSet sẽ phát hiện ra
+              //    mọi pod trong cả cluster rồi không tìm thấy file log cục bộ
+              //    của phần lớn trong số đó.
               // ---------------------------------------------------------------
               discovery.kubernetes "pods" {
                 role = "pod"
@@ -64,15 +63,15 @@ spec:
               }
 
               // ---------------------------------------------------------------
-              // 2. Turn pod metadata into Loki labels.
+              // 2. Biến metadata của pod thành label của Loki.
               //
-              //    Label choice is THE cost decision in Loki. Every distinct
-              //    combination of label values is a separate stream with its
-              //    own index entry and chunks. namespace/pod/container is
-              //    bounded by the cluster size. Promoting trace_id or
-              //    request_id here would create a stream per request and
-              //    destroy the index — that is why they stay inside the log
-              //    line and are found with a filter expression instead.
+              //    Chọn label CHÍNH LÀ quyết định về chi phí trong Loki. Mỗi tổ
+              //    hợp giá trị label khác nhau là một stream riêng, với mục index
+              //    và chunk riêng. namespace/pod/container bị chặn trên bởi quy
+              //    mô cluster. Nâng trace_id hay request_id lên thành label ở đây
+              //    sẽ tạo một stream cho mỗi request và phá nát index — đó là lý
+              //    do chúng nằm trong thân dòng log và được tìm bằng biểu thức
+              //    lọc thay vì tra index.
               // ---------------------------------------------------------------
               discovery.relabel "pod_logs" {
                 targets = discovery.kubernetes.pods.targets
@@ -93,7 +92,7 @@ spec:
                   source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
                   target_label  = "app"
                 }
-                // Builds the on-disk path Alloy will tail.
+                // Dựng đường dẫn trên đĩa mà Alloy sẽ đọc.
                 rule {
                   source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
                   separator     = "/"
@@ -104,52 +103,52 @@ spec:
               }
 
               // ---------------------------------------------------------------
-              // 3. Expand the glob into concrete files.
+              // 3. Khai triển glob thành các đường dẫn cụ thể.
               //
-              //    This component is easy to leave out and the failure is
-              //    confusing: `loki.source.file` takes CONCRETE paths and does
-              //    not expand globs itself, so pointing it straight at the
-              //    relabel output produces a stat error per container —
+              //    Component này rất dễ bị bỏ quên và kiểu hỏng thì gây hoang
+              //    mang: `loki.source.file` nhận đường dẫn CỤ THỂ và không tự
+              //    khai triển glob, nên trỏ thẳng nó vào kết quả relabel sẽ sinh
+              //    ra một lỗi stat cho mỗi container —
               //
               //      failed to tail file, stat failed:
               //      stat /var/log/pods/*<uid>/<container>/*.log
               //
-              //    — and not a single log line reaches Loki. `local.file_match`
-              //    is the component that resolves the pattern and keeps
-              //    watching for files that appear later, which is what makes a
-              //    newly scheduled pod get picked up without a restart.
+              //    — và không một dòng log nào tới được Loki. `local.file_match`
+              //    mới là component phân giải mẫu đường dẫn và tiếp tục theo dõi
+              //    những file xuất hiện sau, nhờ đó một pod mới được xếp lịch sẽ
+              //    được nhặt lên mà không cần restart.
               // ---------------------------------------------------------------
               local.file_match "pod_logs" {
                 path_targets = discovery.relabel.pod_logs.output
                 sync_period  = "10s"
               }
 
-              // 4. Tail them.
+              // 4. Đọc các file đó.
               loki.source.file "pod_logs" {
                 targets    = local.file_match.pod_logs.targets
                 forward_to = [loki.process.parse.receiver]
               }
 
               // ---------------------------------------------------------------
-              // 5. Parse. The CRI stage strips the runtime's wrapper
-              //    ("<ts> stdout F <line>"); skipping it means every log line
-              //    is prefixed with timestamp noise and the JSON stage fails.
+              // 5. Phân tích. Stage CRI bóc lớp bọc của container runtime
+              //    ("<thời gian> stdout F <dòng log>"); bỏ qua nó thì mọi dòng
+              //    log đều bị dính tiền tố nhiễu và stage JSON sẽ hỏng.
               // ---------------------------------------------------------------
               loki.process "parse" {
-                // Two runtimes, two on-disk line formats, and a stage that
-                // cannot parse a line leaves it untouched rather than failing —
-                // so listing both makes the pipeline runtime-agnostic.
+                // Hai runtime, hai định dạng dòng trên đĩa, và một stage không
+                // phân tích nổi một dòng thì để nguyên dòng đó chứ không báo lỗi
+                // — nên liệt kê cả hai làm pipeline chạy được với mọi runtime.
                 //
                 //   containerd:  2026-10-07T11:40:50Z stdout F {"level":"info"...}
                 //   docker:      {"log":"{\"level\":\"info\"...}","stream":"stdout",...}
                 //
-                // Get this wrong and logs still arrive, but every line is the
-                // raw runtime wrapper, `stage.json` below finds no `level`
-                // field, and the level/service labels silently never appear.
+                // Sai chỗ này thì log vẫn tới nơi, nhưng mọi dòng đều là lớp bọc
+                // thô của runtime, `stage.json` bên dưới không tìm thấy trường
+                // `level`, và hai label level/service âm thầm không bao giờ xuất hiện.
                 stage.cri {}
                 stage.docker {}
 
-                // Pull `level` out of our JSON logs so it can become a label.
+                // Rút `level` ra khỏi log JSON của ta để biến nó thành một label.
                 stage.json {
                   expressions = {
                     level   = "level",
@@ -157,8 +156,8 @@ spec:
                   }
                 }
 
-                // Only `level` and `service` are promoted. trace_id stays in
-                // the line body — see the cardinality note above.
+                // Chỉ nâng `level` và `service` lên thành label. trace_id vẫn
+                // nằm trong thân dòng log — xem ghi chú về cardinality ở trên.
                 stage.labels {
                   values = {
                     level   = "",
@@ -169,7 +168,7 @@ spec:
                 forward_to = [loki.write.default.receiver]
               }
 
-              // 6. Ship.
+              // 6. Đẩy vào Loki.
               loki.write "default" {
                 endpoint {
                   url = "http://loki-gateway.observability/loki/api/v1/push"

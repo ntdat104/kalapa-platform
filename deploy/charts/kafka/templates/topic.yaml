@@ -5,15 +5,15 @@ metadata:
   labels:
     strimzi.io/cluster: {{ .Values.cluster.name }}
 spec:
-  # Partition count is the hard ceiling on consumer parallelism: a group can
-  # never have more useful consumers than partitions. It can be raised later,
-  # but never lowered, and raising it redistributes keys across partitions —
-  # which breaks per-key ordering for keys that move.
+  # Số partition là trần cứng cho mức song song của consumer: một group không
+  # bao giờ có nhiều consumer hữu dụng hơn số partition. Số này tăng được về sau
+  # nhưng không bao giờ giảm được, và tăng lên sẽ phân bố lại key giữa các
+  # partition — làm hỏng thứ tự theo key với mọi key bị dời chỗ.
   partitions: {{ .Values.topic.partitions }}
   replicas: {{ .Values.topic.replicas }}
   config:
     retention.ms: {{ .Values.topic.retentionMs | quote }}
     segment.bytes: {{ .Values.topic.segmentBytes | quote }}
-    # compact would keep only the latest record per key — right for a state
-    # topic, wrong for an event log where every submission matters.
+    # compact chỉ giữ bản ghi mới nhất của mỗi key — đúng cho một topic lưu
+    # trạng thái, sai cho một nhật ký sự kiện nơi mọi lần nộp đều quan trọng.
     cleanup.policy: delete

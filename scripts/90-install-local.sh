@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Installs the identical stack with plain Helm, no Argo CD and no GitHub.
+# Cài đúng stack đó bằng Helm thuần, không Argo CD và không cần GitHub.
 #
-# This is the escape hatch for "I have no GitHub account", "I am offline", or
-# "Argo CD will not sync and I want to know whether the charts themselves are
-# wrong". It is not a second source of truth: the script READS the Argo CD
-# Application manifests and replays them with helm, so the two paths cannot
-# drift. If you change an Application's values, this script picks it up.
+# Đây là cửa thoát hiểm cho các tình huống "tôi không có tài khoản GitHub", "tôi
+# đang offline", hoặc "Argo CD không chịu đồng bộ và tôi muốn biết bản thân các
+# chart có sai không". Nó KHÔNG phải nguồn sự thật thứ hai: script ĐỌC chính các
+# manifest Application của Argo CD rồi phát lại bằng helm, nên hai đường không
+# thể lệch nhau. Bạn đổi values của một Application thì script này nhận ngay.
 #
-# What you lose versus the real path: drift detection, self-healing, the sync
-# wave dependency graph, and the audit trail. Everything that actually runs in
-# the cluster is the same.
+# So với đường thật, bạn mất: phát hiện drift, tự chữa lành, đồ thị phụ thuộc
+# theo sync wave, và dấu vết kiểm toán. Còn mọi thứ thực sự chạy trong cluster
+# thì giống hệt.
 source "$(dirname "$0")/lib.sh"
 
 ROOT=$(repo_root)
@@ -35,19 +35,19 @@ for entry in "${REPOS[@]}"; do
   helm repo add "$1" "$2" >/dev/null 2>&1 || warn "could not add repo $1"
   names+=("$1")
 done
-# Update ONLY our repos by name. A bare `helm repo update` also refreshes every
-# other repo in your global Helm config, and one unreachable repo there would
-# abort this script under `set -e`.
+# CHỈ cập nhật đúng các repo của ta, theo tên. Một lệnh `helm repo update` trần
+# sẽ làm mới cả mọi repo khác trong cấu hình Helm toàn cục của bạn, và chỉ cần
+# một repo không với tới được là script này đứt ngay vì `set -e`.
 helm repo update "${names[@]}" >/dev/null 2>&1 || warn "some repos could not be refreshed"
 
-# Turn every Application manifest into a line the shell can consume.
+# Biến mỗi manifest Application thành một dòng mà shell đọc được.
 #
-# Fields are separated by US (0x1f), not a tab. With a whitespace IFS, bash
-# collapses runs of the delimiter, so a row with an empty field (a local chart
-# has no version) silently shifts every column after it — which lands releases
-# in the wrong namespace with no error at all. 0x1f is not whitespace, so empty
-# fields survive.
-#   wave <US> release <US> repo|CHART|MANIFESTS <US> chart-or-path <US> version <US> namespace <US> values-file
+# Các trường ngăn cách bằng ký tự US (0x1f), không phải tab. Với IFS là ký tự
+# khoảng trắng, bash gộp nhiều dấu ngăn liền nhau thành một, nên một dòng có
+# trường rỗng (chart cục bộ thì không có version) sẽ âm thầm đẩy lệch mọi cột
+# phía sau — khiến release được cài vào nhầm namespace mà không báo lỗi gì cả.
+# 0x1f không phải khoảng trắng nên trường rỗng được giữ nguyên.
+#   wave <US> release <US> repo|CHART|MANIFESTS <US> chart-hoặc-đường-dẫn <US> version <US> namespace <US> file-values
 plan=$(mktemp)
 python3 - "$ROOT" "$plan" <<'PY'
 import os, sys, glob, yaml, tempfile
@@ -75,12 +75,12 @@ for path in sorted(glob.glob(f"{root}/deploy/argocd/platform/*.yaml")
     if "chart" in src:
         rows.append((wave, release, src["repoURL"], src["chart"], src.get("targetRevision", ""), ns, values_file))
     else:
-        # A path-based source: a directory of plain manifests, or a local chart.
+        # Nguồn theo đường dẫn: một thư mục manifest thuần, hoặc một chart cục bộ.
         local = os.path.join(root, src["path"])
         kind = "CHART" if os.path.exists(os.path.join(local, "Chart.yaml")) else "MANIFESTS"
         rows.append((wave, release, kind, local, "", ns, values_file))
 
-# The ApplicationSet generates one Application per service chart; replay that.
+# ApplicationSet sinh ra mỗi chart service một Application; ở đây phát lại điều đó.
 for svc in ("gateway", "kyc", "scoring"):
     rows.append((30, svc, "CHART", f"{root}/deploy/charts/{svc}", "", "kalapa", ""))
 
@@ -119,9 +119,8 @@ while IFS=$'\x1f' read -r wave release repo chart version ns values; do
       ;;
   esac
 
-  # --wait on the heavy operators only. Waiting on everything turns a 12-minute
-  # install into a 40-minute one, because Helm waits for pods that are waiting
-  # for images.
+  # Chỉ dùng --wait cho các operator nặng. Chờ mọi thứ sẽ biến một lần cài 12
+  # phút thành 40 phút, vì Helm ngồi chờ những pod vốn đang chờ tải image.
   case "$release" in
     cnpg-operator|strimzi-operator) args+=(--wait --timeout 5m) ;;
   esac
@@ -132,7 +131,7 @@ while IFS=$'\x1f' read -r wave release repo chart version ns values; do
     warn "$release failed — re-run with 'helm ${args[*]}' to see why"
   fi
 
-  # The operators must be reconciling before their custom resources land.
+  # Các operator phải đang điều hoà trước khi custom resource của chúng được apply.
   case "$release" in
     cnpg-operator)
       wait_for "the Cluster CRD" 180 kube get crd clusters.postgresql.cnpg.io ;;

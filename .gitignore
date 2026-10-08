@@ -7,12 +7,12 @@ coverage.out
 **/Chart.lock
 **/charts/*.tgz
 
-# Local overrides that must never reach the GitOps repo
+# Các file ghi đè cục bộ, tuyệt đối không được lọt vào repo GitOps
 **/*.local.yaml
 .env
 .envrc
 
-# Editors
+# Trình soạn thảo
 .DS_Store
 .idea/
 .vscode/

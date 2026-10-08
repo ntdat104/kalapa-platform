@@ -1,47 +1,48 @@
-# Argo CD, trimmed for a 7 GB single-node cluster.
+# Argo CD, đã cắt gọt cho một cluster một node.
 #
-# Component map — worth knowing before you tune any of it:
-#   application-controller  reconciles live state against desired state; the
-#                           memory hog, because it caches every object it
-#                           manages
-#   repo-server             clones Git and runs `helm template` / `kustomize
-#                           build`; CPU-bound, and where chart rendering fails
-#   server                  the API and web UI
-#   applicationset-controller  expands ApplicationSets into Applications
-#   redis                   cache for the controller's manifest renders
-#   dex                     SSO broker — disabled here, local admin only
-#   notifications           Slack/webhook on sync events — disabled
+# Bản đồ thành phần — nên biết trước khi chỉnh bất cứ thứ gì:
+#   application-controller  điều hoà trạng thái thật theo trạng thái mong muốn;
+#                           đây là thành phần ngốn bộ nhớ nhất vì nó cache mọi
+#                           object nó quản
+#   repo-server             clone Git và chạy `helm template` / `kustomize
+#                           build`; nặng CPU, và là nơi việc render chart hỏng
+#   server                  API và giao diện web
+#   applicationset-controller  bung ApplicationSet thành các Application
+#   redis                   cache cho kết quả render manifest của controller
+#   dex                     bộ môi giới SSO — tắt ở đây, chỉ dùng admin cục bộ
+#   notifications           gửi Slack/webhook khi đồng bộ — tắt
 #
-# Installed with Helm rather than by Argo CD itself. Self-managing Argo CD is
-# possible and elegant, but means a broken sync can leave you with no way to
-# fix the broken sync.
+# Cài bằng Helm chứ không để Argo CD tự quản lấy mình. Để Argo CD tự quản là
+# khả thi và đẹp, nhưng khi đó một lần đồng bộ hỏng có thể khiến bạn không còn
+# cách nào sửa chính lần đồng bộ hỏng đó.
 
 global:
   domain: argocd.kalapa.local
 
 configs:
   params:
-    # Plain HTTP behind the NGINX Ingress. With TLS on, Argo CD redirects to
-    # HTTPS, the Ingress forwards HTTP, and you get a redirect loop — the
-    # single most common Argo-behind-ingress problem.
+    # Chạy HTTP thuần sau NGINX Ingress. Bật TLS thì Argo CD chuyển hướng sang
+    # HTTPS, Ingress lại chuyển tiếp HTTP, và bạn có một vòng lặp chuyển hướng —
+    # đây là sự cố phổ biến nhất khi đặt Argo CD sau ingress.
     server.insecure: true
-    # One worker per kind instead of the default. Fewer goroutines, slower
-    # reconciles, much less memory.
+    # Mỗi loại tài nguyên một worker thay vì mặc định. Ít goroutine hơn, điều
+    # hoà chậm hơn, nhưng tốn ít bộ nhớ hơn hẳn.
     controller.status.processors: "2"
     controller.operation.processors: "2"
-    # Keep the repo-server from holding several rendered charts in memory.
+    # Giữ cho repo-server không ôm nhiều chart đã render cùng lúc trong bộ nhớ.
     reposerver.parallelism.limit: "2"
 
   cm:
-    # How long before Argo re-reads Git when no webhook has fired. The default
-    # is 3m; 2m keeps the lab responsive without hammering GitHub.
+    # Bao lâu thì Argo đọc lại Git khi không có webhook nào kích hoạt. Mặc định
+    # là 3 phút; để 2 phút cho lab phản hồi nhanh mà không dội quá nhiều vào GitHub.
     timeout.reconciliation: 120s
-    # Treat these as "not drift": they are written by controllers, not by Git.
+    # Coi những trường này là "không phải drift": chúng do controller ghi, không
+    # phải từ Git.
     resource.customizations.ignoreDifferences.all: |
       jsonPointers:
         - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
 
-  # Only one admin account. Adding users here is the alternative to running Dex.
+  # Chỉ một tài khoản admin. Thêm người dùng ở đây là cách thay cho việc chạy Dex.
   rbac:
     policy.default: role:readonly
     policy.csv: |
@@ -63,9 +64,9 @@ repoServer:
       cpu: 100m
       memory: 192Mi
     limits:
-      # Rendering kube-prometheus-stack (a few thousand manifests) is the peak.
-      # Below ~384Mi the repo-server is OOMKilled mid-render and the
-      # Application reports a confusing "rpc error: code = Unavailable".
+      # Render kube-prometheus-stack (vài nghìn manifest) là lúc đỉnh điểm. Dưới
+      # khoảng 384Mi thì repo-server bị OOMKill giữa chừng và Application báo một
+      # lỗi rất khó hiểu: "rpc error: code = Unavailable".
       memory: 384Mi
 
 server:
@@ -101,7 +102,8 @@ redis:
       memory: 128Mi
 
 dex:
-  # ~60Mi for an SSO broker with no identity provider behind it.
+  # Khoảng 60Mi cho một bộ môi giới SSO mà phía sau chẳng có nhà cung cấp định
+  # danh nào.
   enabled: false
 
 notifications:

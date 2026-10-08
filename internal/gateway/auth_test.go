@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// newTestIssuer stands up a fake Keycloak that serves a JWKS for a key we
-// control, so the whole verification path is exercised without a cluster.
+// newTestIssuer dựng một Keycloak giả phục vụ JWKS cho một khoá do ta kiểm
+// soát, nhờ vậy toàn bộ đường verify được chạy thử mà không cần cluster.
 func newTestIssuer(t *testing.T) (*httptest.Server, *rsa.PrivateKey) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -85,8 +85,8 @@ func TestVerify(t *testing.T) {
 	})
 
 	t.Run("rejects an unexpected algorithm", func(t *testing.T) {
-		// alg:none and HS256 key-confusion both rely on the verifier trusting
-		// the header. This asserts we never do.
+		// Cả tấn công alg:none lẫn nhầm lẫn khoá HS256 đều dựa vào việc bên
+		// verify tin vào header. Test này khẳng định ta không bao giờ tin.
 		if _, err := auth.Verify(context.Background(), sign(t, key, "test-key", "none", valid)); err == nil {
 			t.Fatal("expected alg rejection")
 		}

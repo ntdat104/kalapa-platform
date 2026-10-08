@@ -1,4 +1,4 @@
-// Command gateway runs the public edge service.
+// Command gateway chạy service biên công khai.
 package main
 
 import (
@@ -57,9 +57,9 @@ func run() error {
 	}
 
 	srv := httpx.New(cfg.Server, log, metrics)
-	// The gateway is stateless: it has no readiness dependency on the
-	// upstreams on purpose. Making it unready when kyc is down would take the
-	// whole edge offline, including the endpoints that do not need kyc.
+	// Gateway là stateless: nó cố ý KHÔNG đặt readiness phụ thuộc vào upstream.
+	// Làm nó unready khi kyc chết sẽ kéo sập cả cửa vào, kể cả những endpoint
+	// vốn chẳng cần tới kyc.
 	log.Info("upstreams configured",
 		slog.String("kyc", cfg.Services.KYC),
 		slog.String("scoring", cfg.Services.Scoring),

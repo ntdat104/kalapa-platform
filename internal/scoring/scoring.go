@@ -1,11 +1,12 @@
-// Package scoring consumes kyc.application.submitted and derives a credit
-// score. It is the read side of the async pair: no HTTP write path, one Kafka
-// consumer, one query endpoint.
+// Package scoring tiêu thụ sự kiện kyc.application.submitted và suy ra điểm
+// tín dụng. Nó là phía đọc của cặp bất đồng bộ: không có đường ghi qua HTTP,
+// một consumer Kafka, một endpoint truy vấn.
 //
-// The scoring function is deterministic nonsense — a hash, not a model. That
-// is on purpose: a lab needs a result you can predict and assert on, and the
-// interesting failure modes here are infrastructural (consumer lag, rebalance
-// during a rolling update, at-least-once redelivery), not statistical.
+// Hàm tính điểm là thứ vô nghĩa nhưng tất định — một phép băm chứ không phải mô
+// hình. Điều đó có chủ ý: một bài lab cần kết quả đoán trước và khẳng định
+// được, còn những kiểu hỏng đáng quan tâm ở đây là hạ tầng (consumer lag,
+// rebalance giữa lúc rolling update, gửi lại theo at-least-once) chứ không phải
+// thống kê.
 package scoring
 
 import (
@@ -48,10 +49,10 @@ type Score struct {
 	ScoredAt      time.Time `json:"scored_at"`
 }
 
-// applicationSubmitted mirrors kyc.ApplicationSubmitted. It is duplicated
-// rather than imported deliberately: consumers must be able to evolve
-// independently of the producer's internal types, and copying the few fields
-// you actually read is how you keep that true.
+// applicationSubmitted phản chiếu kyc.ApplicationSubmitted. Nó được chép lại
+// thay vì import một cách có chủ ý: consumer phải tiến hoá được độc lập với
+// kiểu dữ liệu nội bộ của producer, và chép đúng vài trường mình thực sự đọc là
+// cách giữ cho điều đó luôn đúng.
 type applicationSubmitted struct {
 	ApplicationID string    `json:"application_id"`
 	NationalID    string    `json:"national_id"`
@@ -73,15 +74,15 @@ func (s *Service) Routes() *http.ServeMux {
 	return mux
 }
 
-// Handle is the events.Handler passed to the consumer loop.
+// Handle là events.Handler được truyền vào vòng lặp consumer.
 func (s *Service) Handle(ctx context.Context, key string, value []byte) error {
 	ctx, span := s.Tracer.Start(ctx, "scoring.handle")
 	defer span.End()
 
 	var evt applicationSubmitted
 	if err := json.Unmarshal(value, &evt); err != nil {
-		// A malformed record is permanent: retrying it forever would block
-		// the partition. Record it and let the offset advance.
+		// Một bản ghi hỏng định dạng là lỗi vĩnh viễn: thử lại mãi sẽ làm nghẽn
+		// partition. Ghi nhận lại rồi để offset tiến lên.
 		span.RecordError(err)
 		return err
 	}
@@ -97,9 +98,9 @@ func (s *Service) Handle(ctx context.Context, key string, value []byte) error {
 		attribute.String("scoring.decision", decision),
 	)
 
-	// ON CONFLICT makes the handler idempotent, which is the price of
-	// at-least-once delivery: the same event will be redelivered whenever a
-	// pod dies between handling and committing.
+	// ON CONFLICT làm handler trở nên idempotent — đó là cái giá của việc giao
+	// nhận at-least-once: cùng một sự kiện sẽ được gửi lại mỗi khi pod chết
+	// giữa lúc xử lý xong và lúc commit.
 	_, err := s.DB.Exec(ctx,
 		`INSERT INTO credit_scores (application_id, national_id, score, band, decision, scored_at)
 		 VALUES ($1, $2, $3, $4, $5, now())
@@ -138,8 +139,9 @@ func (s *Service) get(w http.ResponseWriter, r *http.Request) {
 	).Scan(&sc.ApplicationID, &sc.NationalID, &sc.Score, &sc.Band, &sc.Decision, &sc.ScoredAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		// 404 here usually means "not scored *yet*" rather than "never will
-		// be" — the async gap is visible to the client, which is honest.
+		// 404 ở đây thường nghĩa là "CHƯA chấm điểm" chứ không phải "sẽ không
+		// bao giờ có" — khoảng trễ bất đồng bộ được phơi ra cho người gọi thấy,
+		// và như vậy là trung thực.
 		httpx.WriteError(w, http.StatusNotFound, "no score for this application yet")
 		return
 	}
@@ -176,7 +178,7 @@ func (s *Service) list(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
 }
 
-// compute maps a national id onto 300-850, the conventional FICO range.
+// compute ánh xạ số CCCD vào khoảng 300-850, tức dải điểm FICO thông dụng.
 func compute(nationalID string) int {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(nationalID))

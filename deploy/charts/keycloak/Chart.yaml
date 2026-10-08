@@ -1,9 +1,9 @@
 apiVersion: v2
 name: keycloak
 description: |
-  Keycloak in dev mode with an imported realm, backed by its own
-  CloudNativePG database. Hand-written rather than pulled from an upstream
-  chart so every object is visible and the memory footprint is controlled.
+  Keycloak chạy chế độ dev với một realm được nhập sẵn, dùng database
+  CloudNativePG riêng. Viết tay thay vì kéo từ một chart có sẵn, để mọi object
+  đều nhìn thấy được và kiểm soát được mức tiêu thụ bộ nhớ.
 type: application
 version: 0.1.0
 appVersion: "26.4"

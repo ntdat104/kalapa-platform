@@ -1,15 +1,14 @@
-// Package httpx runs the two listeners every Kalapa service exposes and owns
-// the shutdown choreography the Deployment relies on.
+// Package httpx chạy hai listener mà mọi service Kalapa phơi ra, và nắm toàn
+// bộ trình tự tắt mềm mà Deployment dựa vào.
 //
-// Why two listeners:
-//   - :8080 business traffic, reachable through the Service and the Ingress
-//   - :9090 /healthz/live, /healthz/ready, /metrics — reachable only from
-//     kubelet and Prometheus, never from the Ingress
+// Vì sao hai listener:
+//   - :8080 traffic nghiệp vụ, tới được qua Service và Ingress
+//   - :9090 /healthz/live, /healthz/ready, /metrics — chỉ kubelet và
+//     Prometheus tới được, không bao giờ qua Ingress
 //
-// This is the Go equivalent of YAS's server.port + management.server.port
-// split. Keeping probes off the public port means a saturated request queue
-// cannot starve the liveness probe and get the pod killed while it is merely
-// busy.
+// Đây là bản Go của việc YAS tách server.port và management.server.port. Giữ
+// probe ra khỏi port công khai nghĩa là một hàng đợi request bị bão hoà không
+// thể bỏ đói liveness probe và làm pod bị giết trong khi nó chỉ đang bận.
 package httpx
 
 import (
@@ -31,10 +30,10 @@ import (
 	"github.com/kalapa-lab/kalapa-platform/internal/platform/obs"
 )
 
-// Checker reports whether a dependency is usable right now.
+// Checker cho biết một phụ thuộc có dùng được ngay lúc này không.
 type Checker func(context.Context) error
 
-// Server ties the app mux, the admin mux and the lifecycle together.
+// Server gắn mux nghiệp vụ, mux quản trị và vòng đời lại với nhau.
 type Server struct {
 	cfg     config.Server
 	log     *slog.Logger
@@ -54,21 +53,21 @@ func New(cfg config.Server, log *slog.Logger, metrics *obs.Metrics) *Server {
 		metrics:         metrics,
 		readinessChecks: map[string]Checker{},
 	}
-	// Liveness is true from construction: "the process is not wedged".
-	// Readiness stays false until Run has wired everything up.
+	// Liveness đúng ngay từ lúc khởi tạo: "process chưa bị treo cứng".
+	// Readiness vẫn false cho tới khi Run nối xong mọi thứ.
 	s.live.Store(true)
 	return s
 }
 
-// AddReadinessCheck registers a dependency probe. A failing check removes the
-// pod from the Service endpoints without restarting it — the correct response
-// to "Postgres is briefly unreachable".
+// AddReadinessCheck đăng ký một phép kiểm tra phụ thuộc. Kiểm tra hỏng sẽ gỡ
+// pod khỏi Service endpoints mà KHÔNG restart nó — đó là phản ứng đúng cho
+// tình huống "Postgres tạm thời không với tới được".
 func (s *Server) AddReadinessCheck(name string, c Checker) {
 	s.readinessChecks[name] = c
 }
 
-// Go registers a goroutine (a Kafka consumer loop, say) whose lifetime is tied
-// to the server's. Returning an error from it shuts the whole process down.
+// Go đăng ký một goroutine (ví dụ vòng lặp consumer Kafka) có vòng đời gắn với
+// vòng đời của server. Nó trả về lỗi thì cả process tắt.
 func (s *Server) Go(fn func(context.Context) error) {
 	s.backgroundTasks = append(s.backgroundTasks, fn)
 }
@@ -77,9 +76,9 @@ func (s *Server) adminMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz/live", func(w http.ResponseWriter, r *http.Request) {
-		// Deliberately dependency-free. If liveness checked Postgres, a
-		// database blip would restart every pod at once and turn a small
-		// outage into a thundering-herd reconnect storm.
+		// Cố ý không phụ thuộc gì. Nếu liveness kiểm tra Postgres, một cú chập
+		// database sẽ restart mọi pod cùng lúc, biến một sự cố nhỏ thành cơn
+		// bão kết nối lại đồng loạt.
 		if s.live.Load() {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "UP"})
 			return
@@ -119,21 +118,21 @@ func (s *Server) adminMux() *http.ServeMux {
 	return mux
 }
 
-// Run starts both listeners and blocks until SIGTERM, then performs the drain
-// sequence described in docs/02-kubernetes-deep-dive.md.
+// Run khởi động cả hai listener và chặn cho tới khi nhận SIGTERM, sau đó thực
+// hiện trình tự xả tải mô tả ở docs/02-kubernetes-deep-dive.md.
 func (s *Server) Run(parent context.Context, appHandler http.Handler, serviceName string) error {
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// otelhttp extracts the inbound traceparent and starts the server span.
-	// Naming the span after the registered route keeps Tempo's span-name
-	// cardinality finite, the same reason the metrics label does it.
+	// otelhttp đọc traceparent từ request đến và bắt đầu span phía server.
+	// Đặt tên span theo route đã đăng ký giữ cho số tên span trong Tempo là hữu
+	// hạn — cùng lý do với label của metric.
 	traced := otelhttp.NewHandler(appHandler, serviceName,
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-			// A Go 1.22 ServeMux pattern already starts with the method
-			// ("GET /kyc/applications/{id}"), so prefixing r.Method again
-			// yields "GET GET /kyc/...". Fall back to the method alone when
-			// nothing matched, which keeps the name bounded either way.
+			// Pattern của ServeMux từ Go 1.22 đã bắt đầu bằng method
+			// ("GET /kyc/applications/{id}"), nên thêm r.Method vào trước nữa
+			// sẽ ra "GET GET /kyc/...". Khi không khớp pattern nào thì chỉ dùng
+			// method, để tên span vẫn luôn hữu hạn.
 			if route := obs.Route(appHandler, r); route != "unmatched" {
 				return route
 			}
@@ -180,20 +179,21 @@ func (s *Server) Run(parent context.Context, appHandler http.Handler, serviceNam
 		s.log.Error("fatal error, draining", slog.Any("error", runErr))
 	}
 
-	// Step 1: fail readiness immediately. The endpoints controller now starts
-	// removing this pod from the Service. The container's preStop hook is
-	// sleeping in parallel, which is what buys kube-proxy/the Ingress time to
-	// notice before we stop accepting.
+	// Bước 1: báo không sẵn sàng ngay lập tức. Endpoints controller bắt đầu gỡ
+	// pod này khỏi Service. Song song đó, preStop hook của container đang ngủ —
+	// chính khoảng ngủ đó mua thời gian cho kube-proxy/Ingress kịp nhận ra
+	// trước khi ta ngừng nhận kết nối.
 	s.ready.Store(false)
 
-	// Step 2: stop accepting, let in-flight requests finish.
+	// Bước 2: ngừng nhận kết nối mới, để các request đang chạy hoàn tất.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
 	defer cancel()
 	if err := appSrv.Shutdown(shutdownCtx); err != nil {
 		s.log.Warn("app listener did not drain cleanly", slog.Any("error", err))
 	}
-	// Step 3: admin last, so Prometheus can scrape the final counter values
-	// and the kubelet keeps getting a truthful readiness answer until the end.
+	// Bước 3: đóng admin sau cùng, để Prometheus kịp scrape giá trị counter
+	// cuối cùng và kubelet vẫn nhận được câu trả lời readiness trung thực tới
+	// phút chót.
 	_ = adminSrv.Shutdown(shutdownCtx)
 
 	s.log.Info("shutdown complete")
@@ -212,11 +212,11 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// WriteJSON is the shared response helper for the domain handlers.
+// WriteJSON là hàm trả lời dùng chung cho các handler nghiệp vụ.
 func WriteJSON(w http.ResponseWriter, status int, body any) { writeJSON(w, status, body) }
 
-// WriteError emits a consistent error envelope so the gateway can pass upstream
-// failures through without reshaping them.
+// WriteError trả về một khuôn lỗi thống nhất, để gateway chuyển tiếp lỗi từ
+// upstream mà không phải định dạng lại.
 func WriteError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }

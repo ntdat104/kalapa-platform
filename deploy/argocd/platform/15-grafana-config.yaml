@@ -4,7 +4,8 @@ metadata:
   name: grafana-config
   namespace: argocd
   annotations:
-    # After Grafana itself: the sidecar must be running to notice the ConfigMaps.
+    # Sau khi chính Grafana đã chạy: sidecar phải đang chạy mới nhận ra các
+    # ConfigMap này.
     argocd.argoproj.io/sync-wave: "2"
 spec:
   project: platform

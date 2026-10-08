@@ -19,9 +19,9 @@ spec:
         name: cpu
         target:
           type: Utilization
-          # Utilization is measured against the *request*, not the limit. With
-          # requests: 50m and a 70% target, the HPA scales out at 35m — which
-          # is why an under-requested pod scales far too eagerly.
+          # Utilisation được tính theo REQUEST chứ không theo limit. Với
+          # requests: 50m và mục tiêu 70%, HPA scale ra ở mức 35m — đó là lý do
+          # một pod đặt request quá thấp lại scale nhạy quá mức.
           averageUtilization: {{ . }}
     {{- end }}
     {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
@@ -34,10 +34,10 @@ spec:
     {{- end }}
   behavior:
     scaleUp:
-      # A short window reacts fast to a burst.
+      # Cửa sổ ngắn giúp phản ứng nhanh với một đợt tăng đột ngột.
       stabilizationWindowSeconds: {{ .Values.autoscaling.scaleUpStabilizationSeconds }}
     scaleDown:
-      # A long one prevents flapping: scaling in immediately after a spike
-      # just re-triggers the spike on the remaining pods.
+      # Cửa sổ dài chống dao động: thu hẹp ngay sau một đợt tăng chỉ làm đợt
+      # tăng đó tái diễn trên số pod còn lại.
       stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds }}
 {{- end }}

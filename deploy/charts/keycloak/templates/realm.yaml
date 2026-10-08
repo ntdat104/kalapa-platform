@@ -1,9 +1,8 @@
 {{/*
-The realm is imported from a ConfigMap at startup, which keeps the identity
-configuration in Git like everything else. Clicking it together in the admin
-console would work until the first pod restart wipes it — dev mode's H2-like
-ephemerality does not apply here (we use Postgres), but a hand-made realm is
-still undocumented state nobody can reproduce.
+Realm được nhập từ một ConfigMap lúc khởi động, nhờ vậy cấu hình định danh cũng
+nằm trong Git như mọi thứ khác. Bấm chuột tạo realm trong giao diện quản trị thì
+vẫn chạy, nhưng đó là trạng thái không ai tái tạo được và không ai ghi lại —
+ngay cả khi dữ liệu không mất (ở đây ta dùng Postgres chứ không phải H2).
 */}}
 apiVersion: v1
 kind: ConfigMap

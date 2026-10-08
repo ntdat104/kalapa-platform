@@ -1,9 +1,9 @@
 apiVersion: v2
 name: go-service
 description: |
-  Base chart for every Kalapa Go microservice. Service charts declare this as a
-  file:// dependency and only override values — exactly how YAS's per-service
-  charts wrap its shared `backend` chart.
+  Chart gốc cho mọi microservice Go của Kalapa. Các chart service khai báo nó
+  làm dependency kiểu file:// và chỉ ghi đè values — đúng cách mà các chart
+  từng service của YAS bọc quanh chart `backend` dùng chung của nó.
 type: application
 version: 0.1.0
 appVersion: "latest"

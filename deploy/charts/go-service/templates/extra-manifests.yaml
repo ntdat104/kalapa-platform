@@ -1,10 +1,10 @@
 {{/*
-Escape hatch for one-off objects a service needs but the base chart should not
-know about — a Job, a ConfigMap, an ExternalSecret. `tpl` is applied so the
-value can itself contain template expressions.
+Cửa thoát hiểm cho những object dùng một lần mà một service cần nhưng chart gốc
+không nên biết tới — một Job, một ConfigMap, một ExternalSecret. `tpl` được áp
+dụng để chính giá trị đó cũng có thể chứa biểu thức template.
 
-This exists so that "my service needs one extra object" never becomes a reason
-to fork the base chart.
+Nó tồn tại để "service của tôi cần thêm một object" không bao giờ trở thành lý
+do phải fork chart gốc.
 */}}
 {{- range .Values.extraObjects }}
 ---

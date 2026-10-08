@@ -10,10 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics owns the service's Prometheus registry. A private registry (rather
-// than prometheus.DefaultRegisterer) keeps /metrics free of whatever a
-// dependency decided to register globally, so the cardinality of the scrape is
-// something this repo actually controls.
+// Metrics sở hữu registry Prometheus của service. Dùng registry riêng (thay vì
+// prometheus.DefaultRegisterer) giúp /metrics không dính những gì một
+// dependency nào đó đã đăng ký toàn cục, nhờ vậy cardinality của lần scrape là
+// thứ repo này thực sự kiểm soát được.
 type Metrics struct {
 	Registry *prometheus.Registry
 
@@ -35,8 +35,8 @@ func NewMetrics(service, version string) *Metrics {
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name: "http_server_request_duration_seconds",
 			Help: "HTTP request latency in seconds.",
-			// Native histograms would be nicer but need a Prometheus flag;
-			// these buckets match the SLO panels in the Grafana dashboard.
+			// Native histogram thì hay hơn nhưng cần bật cờ ở Prometheus; các
+			// bucket này khớp với panel SLO trong dashboard Grafana.
 			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 		}, []string{"method", "route"}),
 		inflight: prometheus.NewGauge(prometheus.GaugeOpts{
@@ -55,8 +55,8 @@ func NewMetrics(service, version string) *Metrics {
 
 	reg.MustRegister(
 		m.requests, m.duration, m.inflight, m.events, m.buildInfo,
-		// Go runtime + process collectors are what the "is this pod about to be
-		// OOMKilled" panel reads; on a 64Mi limit that panel matters.
+		// Panel "pod này sắp bị OOMKill chưa" đọc từ collector của Go runtime và
+		// của process; với limit 64Mi thì panel đó rất đáng quan tâm.
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
@@ -64,12 +64,12 @@ func NewMetrics(service, version string) *Metrics {
 	return m
 }
 
-// Handler is mounted on the admin port only.
+// Handler chỉ được gắn vào port quản trị.
 func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.Registry, promhttp.HandlerOpts{Registry: m.Registry})
 }
 
-// RecordEvent tracks Kafka traffic. direction is "produce" or "consume".
+// RecordEvent đếm traffic Kafka. direction là "produce" hoặc "consume".
 func (m *Metrics) RecordEvent(topic, direction, outcome string) {
 	m.events.WithLabelValues(topic, direction, outcome).Inc()
 }
@@ -84,17 +84,17 @@ func (w *statusRecorder) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// routeResolver is satisfied by *http.ServeMux. It lets the middleware learn
-// the registered pattern for a request *before* dispatching, which is the only
-// reliable way to get a bounded `route` label: r.Pattern is populated on the
-// request the mux passes downstream, not on the one outer middleware holds.
+// routeResolver được *http.ServeMux thoả mãn. Nó cho middleware biết pattern
+// đã đăng ký của một request TRƯỚC khi dispatch — cách duy nhất đáng tin để có
+// label `route` hữu hạn: r.Pattern chỉ được gán trên request mà mux truyền
+// xuống dưới, không phải trên request mà middleware bên ngoài đang giữ.
 type routeResolver interface {
 	Handler(*http.Request) (http.Handler, string)
 }
 
-// Middleware instruments a handler. The `route` label is the registered
-// pattern, never the raw path — using the path would make cardinality unbounded
-// the moment someone requests /kyc/applications/<uuid>.
+// Middleware gắn đo đạc vào một handler. Label `route` là pattern đã đăng ký,
+// không bao giờ là đường dẫn thô — dùng đường dẫn sẽ làm cardinality vô hạn
+// ngay khi có ai đó gọi /kyc/applications/<uuid>.
 func (m *Metrics) Middleware(next http.Handler) http.Handler {
 	resolver, _ := next.(routeResolver)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,8 +117,8 @@ func (m *Metrics) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// Route exposes the same lookup to other middleware (tracing uses it to name
-// spans `GET /kyc/applications/{id}` instead of one span name per id).
+// Route mở cùng phép tra cứu đó cho middleware khác (phần tracing dùng nó để
+// đặt tên span là `GET /kyc/applications/{id}` thay vì mỗi id một tên span).
 func Route(h http.Handler, r *http.Request) string {
 	if resolver, ok := h.(routeResolver); ok {
 		if _, pattern := resolver.Handler(r); pattern != "" {

@@ -1,16 +1,16 @@
-# gitleaks configuration.
+# Cấu hình của gitleaks.
 #
-# Every credential in this repo is a throwaway lab value. They are committed on
-# purpose: a GitOps lab where the secrets are hidden teaches you nothing about
-# how secrets flow. This file tells the scanner which ones are deliberate, so a
-# genuinely leaked credential still fails the build.
+# Mọi thông tin đăng nhập trong repo này đều là giá trị lab dùng xong bỏ. Chúng
+# được commit một cách có chủ ý: một lab GitOps mà secret bị giấu đi thì chẳng
+# dạy bạn được gì về cách secret chảy qua hệ thống. File này nói cho bộ quét
+# biết cái nào là cố ý, để một thông tin đăng nhập BỊ LỘ THẬT vẫn làm fail build.
 title = "kalapa-platform"
 
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Known-fake development credentials"
+description = "Các thông tin đăng nhập giả, dùng cho môi trường phát triển"
 paths = [
   '''deploy/charts/kalapa-config/values\.yaml''',
   '''deploy/charts/postgres/values\.yaml''',

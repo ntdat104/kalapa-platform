@@ -1,15 +1,15 @@
-# CI for the Go services.
+# CI cho các service Go.
 #
-# Two things make this different from a single `go test ./...`:
+# Có hai điểm khiến nó khác một lệnh `go test ./...` đơn thuần:
 #
-#  1. Path filtering. Only services whose code changed are built, but a change
-#     under internal/platform/ or to go.mod rebuilds everything, because they
-#     are compiled into all three binaries. Getting that dependency wrong is
-#     how you ship a stale image that passed a green build.
+#  1. Lọc theo đường dẫn. Chỉ service nào có code thay đổi mới được build, nhưng
+#     một thay đổi dưới internal/platform/ hoặc trong go.mod thì build lại TẤT
+#     CẢ, vì phần đó được biên dịch vào cả ba file nhị phân. Viết sai quan hệ
+#     phụ thuộc này chính là cách bạn phát hành một image cũ với bản build xanh.
 #
-#  2. The job writes the new image tag back into the Helm values and pushes
-#     that commit. That commit is the deploy — Argo CD notices it and syncs.
-#     Nothing in this pipeline has, or needs, cluster credentials.
+#  2. Job cuối ghi tag image mới ngược vào values của Helm rồi push commit đó.
+#     Chính commit đó là việc deploy — Argo CD thấy nó và đồng bộ. Không khâu
+#     nào trong pipeline này có, hay cần, thông tin đăng nhập cluster.
 name: ci
 
 on:
@@ -19,8 +19,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# A second push to the same branch cancels the first. Without this, two pushes
-# a minute apart race to write the image tag and the loser's commit wins.
+# Lần push thứ hai lên cùng nhánh sẽ huỷ lần đầu. Không có dòng này thì hai lần
+# push cách nhau một phút sẽ tranh nhau ghi tag image, và commit của bản build
+# THUA lại là bản thắng.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -78,8 +79,8 @@ jobs:
         run: go vet ./...
 
       - name: gofmt
-        # gofmt exits 0 whether or not it found anything, so the check is on
-        # whether it printed a filename.
+        # gofmt luôn trả về 0 dù có tìm thấy gì hay không, nên phép kiểm tra phải
+        # dựa vào việc nó có in ra tên file hay không.
         run: |
           unformatted=$(gofmt -l ./cmd ./internal)
           if [ -n "$unformatted" ]; then
@@ -88,9 +89,10 @@ jobs:
           fi
 
       - name: Tests with race detector
-        # -race is the point of this step. The HTTP server, the Kafka consumer
-        # and the JWKS cache all share state across goroutines; a data race
-        # there shows up in production as corruption, not as a failed test.
+        # -race mới là trọng tâm của bước này. HTTP server, vòng lặp consumer
+        # Kafka và cache JWKS đều chia sẻ trạng thái giữa các goroutine; một data
+        # race ở đó hiện ra trong môi trường thật dưới dạng dữ liệu hỏng, chứ
+        # không phải một test đỏ.
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Coverage summary
@@ -102,8 +104,8 @@ jobs:
           args: --timeout=5m
 
       - name: govulncheck
-        # Scans the modules actually reachable from the code, not the whole
-        # dependency tree — far fewer false positives than a manifest scanner.
+        # Quét những module THỰC SỰ gọi tới được từ code, chứ không quét cả cây
+        # dependency — ít báo động giả hơn hẳn một bộ quét theo manifest.
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
@@ -141,8 +143,9 @@ jobs:
         with:
           context: .
           file: ./build/Dockerfile
-          # Only push from main. A PR build still compiles and is scanned, so
-          # a broken Dockerfile fails review rather than main.
+          # Chỉ đẩy image khi ở nhánh main. Bản build của PR vẫn biên dịch và vẫn
+          # được quét, nên một Dockerfile hỏng sẽ fail ở khâu review chứ không
+          # phải ở main.
           push: ${{ github.event_name == 'push' }}
           build-args: |
             SERVICE=${{ matrix.service }}
@@ -150,8 +153,8 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/kalapa-${{ matrix.service }}:${{ steps.meta.outputs.short_sha }}
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/kalapa-${{ matrix.service }}:latest
-          # GitHub Actions cache; mode=max caches intermediate stages too, so
-          # an unchanged dependency layer is never rebuilt.
+          # Cache của GitHub Actions; mode=max cache luôn cả các tầng trung gian,
+          # nhờ vậy một tầng dependency không đổi sẽ không bao giờ phải build lại.
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           provenance: false
@@ -162,22 +165,21 @@ jobs:
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/kalapa-${{ matrix.service }}:${{ steps.meta.outputs.short_sha }}
           format: table
-          # A distroless static image has essentially no OS packages, so a
-          # finding here is a real Go dependency CVE rather than noise.
+          # Một image distroless tĩnh gần như không có gói hệ điều hành nào, nên
+          # một phát hiện ở đây là CVE thật của dependency Go chứ không phải tiếng ồn.
           severity: CRITICAL,HIGH
           exit-code: '0'
           ignore-unfixed: true
 
   # ---------------------------------------------------------------------------
-  # The GitOps handoff.
+  # Bước bàn giao sang GitOps.
   #
-  # CI does not deploy. It writes the new immutable tag into the chart values
-  # and pushes; Argo CD sees the commit and reconciles. The benefits are not
-  # abstract:
-  #   - the deployed version is visible in `git log`, with an author and a diff
-  #   - rollback is `git revert`, not a remembered kubectl incantation
-  #   - CI holds no kubeconfig, so a compromised workflow cannot touch the
-  #     cluster directly
+  # CI không deploy. Nó ghi tag bất biến mới vào values của chart rồi push; Argo
+  # CD thấy commit đó và điều hoà lại cluster. Lợi ích ở đây không hề trừu tượng:
+  #   - phiên bản đang chạy nhìn thấy được trong `git log`, có tác giả và có diff
+  #   - rollback là `git revert`, không phải một câu lệnh kubectl phải nhớ
+  #   - CI không giữ kubeconfig nào, nên một workflow bị chiếm quyền cũng không
+  #     chạm trực tiếp được vào cluster
   # ---------------------------------------------------------------------------
   promote:
     needs: [changes, build]
@@ -198,7 +200,7 @@ jobs:
           for svc in $(echo '${{ needs.changes.outputs.services }}' | jq -r '.[]'); do
             f="deploy/charts/${svc}/values.yaml"
             [ -f "$f" ] || continue
-            # Rewrite only the `tag:` line nested under `image:`.
+            # Chỉ ghi lại đúng dòng `tag:` nằm dưới `image:`.
             yq -i ".\"go-service\".image.tag = \"${tag}\"" "$f"
             git add "$f"
             changed=1
@@ -211,9 +213,9 @@ jobs:
         run: |
           git config user.name  'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          # [skip ci] stops this commit from re-triggering the whole pipeline,
-          # which would otherwise loop forever.
+          # [skip ci] ngăn commit này kích hoạt lại cả pipeline, nếu không nó sẽ
+          # lặp vô tận.
           git commit -m "deploy: pin images to ${{ needs.build.outputs.tag }} [skip ci]"
-          # Rebase in case a human pushed while the build was running.
+          # Rebase phòng trường hợp có người push trong lúc bản build đang chạy.
           git pull --rebase origin main
           git push origin main

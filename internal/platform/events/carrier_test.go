@@ -6,8 +6,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// The carrier is the hinge the whole cross-service trace hangs on, so its
-// contract with the OTel propagator is worth pinning down.
+// Carrier là bản lề mà cả trace xuyên service treo lên, nên giao kèo của nó
+// với propagator của OTel rất đáng được ghim lại bằng test.
 func TestRecordCarrierRoundTrip(t *testing.T) {
 	c := &RecordCarrier{Record: &kgo.Record{}}
 
@@ -16,8 +16,8 @@ func TestRecordCarrierRoundTrip(t *testing.T) {
 		t.Fatalf("Get = %q", got)
 	}
 
-	// Re-producing a record must overwrite, not append: two traceparent
-	// headers would make Extract pick an arbitrary one.
+	// Phát lại một bản ghi phải GHI ĐÈ chứ không nối thêm: hai header
+	// traceparent sẽ khiến Extract nhặt đại một cái.
 	c.Set("traceparent", "00-cccc-dddd-01")
 	if n := len(c.Record.Headers); n != 1 {
 		t.Fatalf("expected 1 header after overwrite, got %d", n)

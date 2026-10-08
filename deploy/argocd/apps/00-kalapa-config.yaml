@@ -4,8 +4,8 @@ metadata:
   name: kalapa-config
   namespace: argocd
   annotations:
-    # Before the services: a pod whose ConfigMap does not exist stays in
-    # ContainerCreating indefinitely rather than failing with a clear error.
+    # Đi trước các service: một pod có ConfigMap chưa tồn tại sẽ kẹt ở
+    # ContainerCreating vô hạn chứ không hỏng kèm một lỗi rõ ràng.
     argocd.argoproj.io/sync-wave: "20"
 spec:
   project: kalapa

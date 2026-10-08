@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers. Sourced, not executed.
+# Các hàm dùng chung. File này để source, không phải để chạy trực tiếp.
 
 set -euo pipefail
 
@@ -18,9 +18,9 @@ need() {
 
 kube() { kubectl --context "$CLUSTER_NAME" "$@"; }
 
-# wait_for <description> <timeout-seconds> <command...>
-# Polls until the command succeeds. Used instead of `sleep 60` so the scripts
-# finish as soon as the cluster is ready rather than on a fixed schedule.
+# wait_for <mô tả> <thời gian chờ tối đa tính bằng giây> <lệnh...>
+# Lặp lại cho tới khi lệnh thành công. Dùng thay cho `sleep 60` để script kết
+# thúc ngay khi cluster sẵn sàng, chứ không theo một lịch cố định.
 wait_for() {
   local desc="$1" timeout="$2"; shift 2
   local deadline=$(( $(date +%s) + timeout ))

@@ -4,10 +4,10 @@ metadata:
   name: namespaces
   namespace: argocd
   annotations:
-    # Sync waves order the resources Argo applies. The root app creates all
-    # these Application objects at once; the wave annotation on each decides
-    # the order in which Argo starts syncing them. Lower runs first, and Argo
-    # waits for a wave to be Healthy before starting the next.
+    # Sync wave quyết định thứ tự Argo apply các tài nguyên. Root app tạo mọi
+    # object Application này cùng lúc; annotation wave trên từng cái quyết định
+    # thứ tự Argo bắt đầu đồng bộ chúng. Số nhỏ chạy trước, và Argo chờ một wave
+    # đạt Healthy rồi mới sang wave kế.
     argocd.argoproj.io/sync-wave: "-20"
 spec:
   project: platform

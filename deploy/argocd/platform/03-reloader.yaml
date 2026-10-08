@@ -15,8 +15,8 @@ spec:
       values: |
         fullnameOverride: kalapa-reloader
         reloader:
-          # Namespace-scoped: a cluster-wide Reloader needs cluster-wide RBAC
-          # and would restart workloads this lab does not own.
+          # Giới hạn trong namespace: một Reloader phạm vi toàn cluster cần RBAC
+          # toàn cluster và sẽ restart cả những workload mà lab này không sở hữu.
           watchGlobally: false
           deployment:
             resources:
@@ -25,16 +25,17 @@ spec:
                 memory: 32Mi
               limits:
                 memory: 64Mi
-            # The `kalapa` namespace enforces the `restricted` Pod Security
-            # Standard, and the chart's defaults do not satisfy it. Without
-            # these two blocks the Deployment is created, every Pod is refused
-            # at admission, and the only clue is a FailedCreate event on the
+            # Namespace `kalapa` thực thi Pod Security Standard mức `restricted`,
+            # mà giá trị mặc định của chart này không thoả. Thiếu hai khối dưới
+            # đây thì Deployment vẫn được tạo, mọi Pod bị từ chối ngay ở
+            # admission, và manh mối duy nhất là một event FailedCreate trên
             # ReplicaSet:
             #
             #   kubectl -n kalapa describe rs -l app=kalapa-reloader
             #
-            # This is what `enforce: restricted` buys you — and what it costs:
-            # every third-party chart you install has to earn its place.
+            # Đây là thứ `enforce: restricted` mang lại — và cũng là cái giá của
+            # nó: mọi chart bên thứ ba bạn cài đều phải tự chứng minh mình xứng
+            # đáng được vào.
             securityContext:
               runAsNonRoot: true
               runAsUser: 65534

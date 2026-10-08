@@ -5,12 +5,12 @@ metadata:
   name: {{ include "go-service.fullname" . }}
   labels:
     {{- include "go-service.labels" . | nindent 4 }}
-    # The Prometheus CR created by kube-prometheus-stack only adopts
-    # ServiceMonitors matching its serviceMonitorSelector. The chart sets that
-    # selector to `release: <helm release name>`, so this label is what makes
-    # the difference between "metrics scraped" and "silently ignored".
+    # CR Prometheus do kube-prometheus-stack tạo chỉ nhận những ServiceMonitor
+    # khớp serviceMonitorSelector của nó. Chart đặt selector đó thành
+    # `release: <tên release helm>`, nên chính label này quyết định giữa "metric
+    # được scrape" và "bị bỏ qua âm thầm".
     #
-    # To debug a missing target:
+    # Khi một target mất tích, hãy xem Prometheus thực sự chịu nhận gì:
     #   kubectl -n observability get prometheus -o yaml | grep -A5 serviceMonitorSelector
     release: {{ .Values.serviceMonitor.prometheusRelease }}
 spec:
@@ -21,15 +21,15 @@ spec:
     matchNames:
       - {{ .Release.Namespace }}
   endpoints:
-    # Scrapes the admin port, which is not routed by the Ingress.
+    # Scrape port quản trị, vốn không được Ingress định tuyến tới.
     - port: admin
       path: {{ .Values.serviceMonitor.path }}
       interval: {{ .Values.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
       relabelings:
-        # Without this, every series is labelled `pod=kyc-7d9f...-x2k4` and
-        # nothing else. Promoting the pod and node names makes it possible to
-        # correlate a metric spike with the node it happened on.
+        # Không có phần này thì mọi chuỗi chỉ mang nhãn `pod=kyc-7d9f...-x2k4`
+        # và không gì khác. Nâng tên pod và tên node lên thành nhãn mới cho phép
+        # đối chiếu một đợt tăng metric với đúng node nơi nó xảy ra.
         - sourceLabels: [__meta_kubernetes_pod_node_name]
           targetLabel: node
         - sourceLabels: [__meta_kubernetes_pod_name]

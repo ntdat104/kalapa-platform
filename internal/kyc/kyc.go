@@ -1,10 +1,10 @@
-// Package kyc is the intake service: it accepts an identity-verification
-// application, persists it, and announces it on Kafka for downstream scoring.
+// Package kyc là service tiếp nhận: nó nhận một hồ sơ xác minh danh tính, lưu
+// lại, rồi thông báo lên Kafka để bước chấm điểm phía sau xử lý.
 //
-// The business logic is deliberately thin. What it exists to demonstrate is
-// the shape of a write path that has to be correct under Kubernetes: a
-// database write and an event publish that must not disagree, a readiness
-// check that reflects both dependencies, and a trace that survives the hop.
+// Phần nghiệp vụ cố tình làm mỏng. Thứ nó tồn tại để minh hoạ là hình dạng của
+// một đường ghi phải đúng đắn khi chạy trên Kubernetes: một lần ghi database và
+// một lần phát sự kiện không được phép mâu thuẫn nhau, một readiness check phản
+// ánh cả hai phụ thuộc, và một trace sống sót qua chặng bất đồng bộ.
 package kyc
 
 import (
@@ -27,8 +27,8 @@ import (
 	"github.com/kalapa-lab/kalapa-platform/internal/platform/httpx"
 )
 
-// Schema is applied at startup. Every statement is IF NOT EXISTS because the
-// migration runs on every pod start — see db.Migrate.
+// Schema được áp dụng lúc khởi động. Mọi câu lệnh đều IF NOT EXISTS vì
+// migration chạy ở mỗi lần pod khởi động — xem db.Migrate.
 var Schema = []string{
 	`CREATE TABLE IF NOT EXISTS kyc_applications (
 		id            UUID PRIMARY KEY,
@@ -59,9 +59,9 @@ type submitRequest struct {
 	DateOfBirth string `json:"date_of_birth"`
 }
 
-// ApplicationSubmitted is the event contract with the scoring service. It is a
-// named type on purpose: the Kafka topic is an API, and treating it as one is
-// what lets the two services be deployed independently.
+// ApplicationSubmitted là hợp đồng sự kiện với service scoring. Nó được đặt
+// thành một kiểu có tên một cách có chủ ý: topic Kafka chính là một API, và coi
+// nó như API mới là điều cho phép hai service được deploy độc lập nhau.
 type ApplicationSubmitted struct {
 	ApplicationID string    `json:"application_id"`
 	NationalID    string    `json:"national_id"`
@@ -77,8 +77,8 @@ type Service struct {
 	Log      *slog.Logger
 }
 
-// Routes returns the mux for the business port. Patterns use Go 1.22 method +
-// wildcard syntax so the metrics middleware can read a bounded route label.
+// Routes trả về mux cho port nghiệp vụ. Pattern dùng cú pháp method + ký tự
+// đại diện của Go 1.22, để middleware metric đọc được label route hữu hạn.
 func (s *Service) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /kyc/applications", s.submit)
@@ -117,11 +117,10 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Publish after the commit. The opposite order would let scoring receive
-	// an event for a row that never materialised. The remaining failure mode —
-	// row written, event lost — is the one a real system solves with the
-	// transactional outbox pattern; see docs/07-labs.md lab 6, which has you
-	// build it.
+	// Phát sự kiện SAU khi commit. Thứ tự ngược lại sẽ để scoring nhận một sự
+	// kiện cho bản ghi chưa bao giờ tồn tại. Kiểu hỏng còn lại — bản ghi đã
+	// lưu, sự kiện bị mất — chính là thứ mà hệ thống thật giải bằng mẫu
+	// transactional outbox; xem lab 6 ở docs/07-labs.md, bài đó bắt bạn tự xây.
 	evt := ApplicationSubmitted{
 		ApplicationID: app.ID,
 		NationalID:    app.NationalID,
@@ -130,9 +129,9 @@ func (s *Service) submit(w http.ResponseWriter, r *http.Request) {
 		SubmittedAt:   app.SubmittedAt,
 	}
 	if err := s.Producer.Publish(ctx, app.ID, evt); err != nil {
-		// 202 rather than 500: the application is durably stored, only the
-		// downstream notification failed. Returning 500 would invite the
-		// client to retry and create a duplicate application.
+		// Trả 202 chứ không phải 500: hồ sơ đã được lưu bền, chỉ việc thông báo
+		// xuống dưới là hỏng. Trả 500 sẽ mời người gọi thử lại và tạo ra một hồ
+		// sơ trùng.
 		s.Log.ErrorContext(ctx, "publish failed, application stored", slog.Any("error", err))
 		httpx.WriteJSON(w, http.StatusAccepted, map[string]any{
 			"application": app,

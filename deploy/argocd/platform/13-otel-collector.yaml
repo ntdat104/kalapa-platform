@@ -1,18 +1,18 @@
-# The OpenTelemetry Collector is the single seam between "what the application
-# emits" and "where telemetry is stored".
+# OpenTelemetry Collector là đường nối duy nhất giữa "thứ ứng dụng phát ra" và
+# "nơi telemetry được lưu".
 #
-# Why not have each service push straight to Tempo? Because then every backend
-# change is a redeploy of every service. The collector means the apps speak one
-# protocol (OTLP) to one address forever, and routing, sampling, filtering and
-# attribute shaping all become a config change here.
+# Vì sao không để mỗi service đẩy thẳng vào Tempo? Vì khi đó mỗi lần đổi nơi lưu
+# là một lần deploy lại toàn bộ service. Có collector thì ứng dụng chỉ nói một
+# giao thức (OTLP) tới một địa chỉ, mãi mãi; còn định tuyến, lấy mẫu, lọc và
+# chỉnh thuộc tính đều trở thành một thay đổi cấu hình ở đây.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: opentelemetry-collector
   namespace: argocd
   annotations:
-    # After Tempo and Prometheus: the collector's exporters fail (and the pod
-    # logs errors) until its destinations exist.
+    # Sau Tempo và Prometheus: các exporter của collector sẽ lỗi (và pod ghi đầy
+    # log lỗi) cho tới khi nơi nhận tồn tại.
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: platform
@@ -23,18 +23,18 @@ spec:
     helm:
       releaseName: opentelemetry-collector
       values: |
-        # `deployment` = one shared instance. The alternatives:
-        #   daemonset -> one per node, for node-local telemetry
-        #   statefulset -> when you need sticky routing (tail sampling)
-        # A gateway deployment is the right shape for app-pushed OTLP.
+        # `deployment` = một instance dùng chung. Các lựa chọn khác:
+        #   daemonset   -> mỗi node một bản, cho telemetry cục bộ của node
+        #   statefulset -> khi cần định tuyến dính (tail sampling)
+        # Kiểu gateway deployment là hình dạng đúng cho OTLP do ứng dụng đẩy lên.
         mode: deployment
         replicaCount: 1
 
         image:
-          # The `-contrib` distribution carries the exporters the core build
-          # omits — including prometheusremotewrite. The chart's default
-          # `otelcol-contrib` repository is correct, but pin it so a chart
-          # default change cannot silently drop an exporter.
+          # Bản phân phối `-contrib` mang theo những exporter mà bản lõi không
+          # có — trong đó có prometheusremotewrite. Giá trị mặc định
+          # `otelcol-contrib` của chart vốn đã đúng, nhưng ghim lại để một thay
+          # đổi mặc định của chart không âm thầm làm mất một exporter.
           repository: otel/opentelemetry-collector-contrib
 
         resources:
@@ -44,17 +44,17 @@ spec:
           limits:
             memory: 256Mi
 
-        # The chart's presets write parts of the config for you. Disabled here
-        # so the pipeline below is the whole truth and nothing is appended
-        # invisibly.
+        # Các preset của chart tự viết giúp bạn một phần cấu hình. Tắt hết ở đây
+        # để pipeline bên dưới là toàn bộ sự thật, không có gì bị thêm vào mà bạn
+        # không nhìn thấy.
         presets:
           logsCollection:
             enabled: false
           kubernetesAttributes:
             enabled: false
 
-        # RBAC for the k8sattributes processor, which needs to read pods to
-        # turn a pod IP into k8s.pod.name / k8s.namespace.name.
+        # RBAC cho processor k8sattributes, vốn cần đọc pod để biến một IP pod
+        # thành k8s.pod.name / k8s.namespace.name.
         clusterRole:
           create: true
           rules:
@@ -89,16 +89,15 @@ spec:
                   endpoint: 0.0.0.0:4318
 
           processors:
-            # memory_limiter MUST be first in every pipeline. It sheds load
-            # when the collector approaches its own limit; placed later, the
-            # processors ahead of it have already allocated the memory that
-            # causes the OOM.
+            # memory_limiter PHẢI đứng đầu mọi pipeline. Nó xả bớt tải khi
+            # collector tiến gần giới hạn của chính nó; đặt nó ở sau thì các
+            # processor phía trước đã cấp phát xong đúng phần bộ nhớ gây ra OOM.
             memory_limiter:
               check_interval: 1s
               limit_percentage: 80
               spike_limit_percentage: 25
 
-            # Enriches spans with pod metadata by matching the source IP.
+            # Làm giàu span bằng metadata của pod, khớp theo IP nguồn.
             k8sattributes:
               auth_type: serviceAccount
               passthrough: false
@@ -115,8 +114,8 @@ spec:
                 - sources:
                     - from: connection
 
-            # batch goes last: batching before enrichment would mean
-            # re-walking every batch to enrich it.
+            # batch đứng cuối: gom lô trước khi làm giàu sẽ buộc phải duyệt lại
+            # từng lô để làm giàu.
             batch:
               timeout: 5s
               send_batch_size: 1024
@@ -129,8 +128,8 @@ spec:
                 insecure: true
               sending_queue:
                 enabled: true
-                # Bounded: an unbounded queue turns a Tempo outage into a
-                # collector OOM.
+                # Có giới hạn: một hàng đợi vô hạn sẽ biến một sự cố của Tempo
+                # thành một lần OOM của collector.
                 queue_size: 1000
               retry_on_failure:
                 enabled: true
@@ -141,21 +140,23 @@ spec:
             prometheusremotewrite:
               endpoint: http://prometheus-kube-prometheus-prometheus.observability:9090/api/v1/write
               resource_to_telemetry_conversion:
-                # Copies resource attributes (service.name, k8s.pod.name) onto
-                # the metric labels. Without it every metric is unattributable.
+                # Chép các thuộc tính tài nguyên (service.name, k8s.pod.name)
+                # sang thành label của metric. Thiếu nó thì mọi metric không quy
+                # được về đâu cả.
                 enabled: true
 
             debug:
-              # `detailed` dumps every span to stdout. Useful for ten minutes
-              # while you debug the pipeline, ruinous as a standing setting.
+              # `detailed` đổ mọi span ra stdout. Hữu ích trong mười phút khi
+              # bạn gỡ lỗi pipeline, nhưng tai hại nếu để thường trực.
               verbosity: basic
 
           service:
             telemetry:
               metrics:
-                # The collector's own metrics. Scraped by the ServiceMonitor
-                # below — a collector that is silently dropping data looks
-                # identical to one with no traffic unless you watch these.
+                # Metric nội bộ của chính collector. Được ServiceMonitor bên
+                # dưới scrape — một collector đang âm thầm vứt dữ liệu trông y
+                # hệt một collector không có traffic, trừ khi bạn theo dõi mấy
+                # con số này.
                 level: normal
             pipelines:
               traces:
@@ -167,10 +168,10 @@ spec:
                 processors: [memory_limiter, k8sattributes, batch]
                 exporters: [prometheusremotewrite]
               logs:
-                # Nothing pushes OTLP logs today — the Go services write JSON
-                # to stdout and Alloy ships it. The pipeline exists so that
-                # switching to the OTLP log path later is a config change here
-                # and not a new component.
+                # Hiện chưa có gì đẩy log qua OTLP — các service Go ghi JSON ra
+                # stdout và Alloy chuyển đi. Pipeline này tồn tại để sau này
+                # chuyển sang đường log OTLP chỉ là một thay đổi cấu hình ở đây
+                # chứ không phải thêm một thành phần mới.
                 receivers: [otlp]
                 processors: [memory_limiter, batch]
                 exporters: [debug]

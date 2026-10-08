@@ -1,4 +1,4 @@
-// Command kyc runs the KYC intake service.
+// Command kyc chạy service tiếp nhận hồ sơ KYC.
 package main
 
 import (
@@ -45,9 +45,9 @@ func run() error {
 		return err
 	}
 	defer func() {
-		// Flush the batch span processor before exit, otherwise the spans from
-		// the last few seconds of a pod's life — exactly the ones you want
-		// when diagnosing a bad rollout — are discarded.
+		// Flush bộ xử lý span theo lô trước khi thoát; nếu không, span của vài
+		// giây cuối đời pod — đúng những span bạn cần khi điều tra một đợt
+		// rollout hỏng — sẽ bị vứt đi.
 		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = shutdownTracing(flushCtx)
